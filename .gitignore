@@ -1,0 +1,10 @@
+node_modules
+dist
+dist-preview
+*.local
+.DS_Store
+# Never commit real bank files or backups
+*.csv
+*backup*.json
+e2e/shots
+dist-e2e
