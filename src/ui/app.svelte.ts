@@ -36,6 +36,142 @@ export const app = $state({
 let key: CryptoKey | null = null;
 let header: VaultHeader | null = null;
 
+// Optional encrypted copy in a file you choose (File System Access API, Chrome on Android and desktop)
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type FileHandle = any;
+let mirrorHandle: FileHandle | null = null;
+export const mirror = $state({
+  supported: typeof window !== 'undefined' && 'showSaveFilePicker' in window,
+  name: '',
+  status: 'off' as 'off' | 'ok' | 'needs-permission' | 'error',
+  lastWrite: '',
+  error: '',
+});
+
+const PICKER_TYPES = [{ description: 'Finanzas encrypted file', accept: { 'application/json': ['.json'] } }];
+
+async function loadMirror(): Promise<void> {
+  try {
+    mirrorHandle = (await kv.get<FileHandle>('mirrorHandle')) ?? null;
+  } catch {
+    mirrorHandle = null;
+  }
+  if (!mirrorHandle) {
+    mirror.status = 'off';
+    mirror.name = '';
+    return;
+  }
+  mirror.name = mirrorHandle.name ?? 'file';
+  try {
+    const p = mirrorHandle.queryPermission ? await mirrorHandle.queryPermission({ mode: 'readwrite' }) : 'granted';
+    mirror.status = p === 'granted' ? 'ok' : 'needs-permission';
+  } catch {
+    mirror.status = 'needs-permission';
+  }
+}
+
+async function writeMirror(blob: EncryptedBlob): Promise<void> {
+  if (!mirrorHandle || mirror.status !== 'ok' || !header) return;
+  try {
+    const w = await mirrorHandle.createWritable();
+    await w.write(JSON.stringify(makeBackup(header, blob)));
+    await w.close();
+    mirror.lastWrite = new Date().toISOString();
+    mirror.error = '';
+  } catch (e) {
+    mirror.status = 'error';
+    mirror.error = (e as Error).message;
+  }
+}
+
+async function writeAllNow(): Promise<void> {
+  if (!key || !app.data || app.demo) return;
+  await flush();
+  const blob = await encryptJson(key, $state.snapshot(app.data));
+  await kv.set('data', blob);
+  await writeMirror(blob);
+}
+
+/** Ask where to keep the encrypted copy. Must be called from a tap. */
+export async function chooseMirror(): Promise<boolean> {
+  if (!mirror.supported) return false;
+  let h: FileHandle;
+  try {
+    h = await (window as unknown as { showSaveFilePicker: (o: object) => Promise<FileHandle> }).showSaveFilePicker({
+      suggestedName: 'finanzas-data.json',
+      startIn: 'documents',
+      types: PICKER_TYPES,
+    });
+  } catch (e) {
+    if ((e as Error).name === 'AbortError') return false;
+    throw e;
+  }
+  mirrorHandle = h;
+  mirror.name = h.name ?? 'file';
+  mirror.status = 'ok';
+  try {
+    await kv.set('mirrorHandle', h); // remembered, so the copy keeps updating after the app restarts
+  } catch {
+    /* some browsers cannot store the handle; the copy then works until the app is closed */
+  }
+  await writeAllNow();
+  app.data?.audit.push({ at: new Date().toISOString(), action: 'copy file chosen', detail: mirror.name });
+  return mirror.status === 'ok';
+}
+
+/** After a restart Chrome may ask again for permission to write the file. Must be called from a tap. */
+export async function resumeMirror(): Promise<void> {
+  if (!mirrorHandle) return;
+  try {
+    const p = mirrorHandle.requestPermission ? await mirrorHandle.requestPermission({ mode: 'readwrite' }) : 'granted';
+    mirror.status = p === 'granted' ? 'ok' : 'needs-permission';
+  } catch (e) {
+    mirror.status = 'error';
+    mirror.error = (e as Error).message;
+  }
+  if (mirror.status === 'ok') await writeAllNow();
+}
+
+export async function stopMirror(): Promise<void> {
+  mirrorHandle = null;
+  mirror.status = 'off';
+  mirror.name = '';
+  await kv.del('mirrorHandle');
+}
+
+/** Save a file where you choose when the browser allows it, otherwise as a download. */
+export async function saveFileWithPicker(name: string, makeBlob: () => Promise<Blob>): Promise<string | null> {
+  if (mirror.supported) {
+    let h: FileHandle;
+    try {
+      h = await (window as unknown as { showSaveFilePicker: (o: object) => Promise<FileHandle> }).showSaveFilePicker({
+        suggestedName: name,
+        startIn: 'documents',
+        types: PICKER_TYPES,
+      });
+    } catch (e) {
+      if ((e as Error).name === 'AbortError') return null;
+      h = null;
+    }
+    if (h) {
+      const w = await h.createWritable();
+      await w.write(await makeBlob());
+      await w.close();
+      return h.name ?? name;
+    }
+  }
+  const blob = await makeBlob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  return 'Downloads';
+}
+
 export async function init(): Promise<void> {
   try {
     header = (await kv.get<VaultHeader>('header')) ?? null;
@@ -71,6 +207,7 @@ async function saveNow(): Promise<void> {
   if (!key || !app.data || app.demo) return;
   const blob = await encryptJson(key, $state.snapshot(app.data));
   await kv.set('data', blob);
+  await writeMirror(blob);
 }
 
 export async function flush(): Promise<void> {
@@ -134,6 +271,7 @@ async function openWith(k: CryptoKey): Promise<void> {
   app.phase = 'ready';
   app.tab = 'home';
   touch();
+  await loadMirror();
 }
 
 async function slowDownAfterFailures(): Promise<void> {
@@ -205,11 +343,18 @@ export async function eraseEverything(): Promise<void> {
   header = null;
   app.data = null;
   app.demo = false;
+  mirrorHandle = null;
+  mirror.status = 'off';
+  mirror.name = '';
   await kv.clear();
   app.phase = 'welcome';
 }
 
 // Backups
+
+export function backupName(): string {
+  return `finanzas-backup-${todayIso()}.json`;
+}
 
 export async function backupFile(): Promise<{ name: string; blob: Blob }> {
   if (!key || !header || !app.data) throw new Error('Unlock first.');
@@ -218,7 +363,7 @@ export async function backupFile(): Promise<{ name: string; blob: Blob }> {
   const encrypted = await encryptJson(key, $state.snapshot(app.data));
   await kv.set('data', encrypted);
   const json = JSON.stringify(makeBackup(header, encrypted));
-  return { name: `finanzas-backup-${todayIso()}.json`, blob: new Blob([json], { type: 'application/json' }) };
+  return { name: backupName(), blob: new Blob([json], { type: 'application/json' }) };
 }
 
 export async function restoreFromBackup(text: string, secret: string): Promise<void> {
@@ -242,6 +387,7 @@ export async function restoreFromBackup(text: string, secret: string): Promise<v
     data.audit.push({ at: new Date().toISOString(), action: 'restored from backup', detail: b.createdAt });
     persist();
     touch();
+    await loadMirror();
   } finally {
     app.busy = false;
   }

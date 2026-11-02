@@ -15,7 +15,7 @@
   {:else}
     <div class="stack" style="margin-top: 18px">
       <button class="block" onclick={() => (app.phase = 'create')}>Create my vault</button>
-      <button class="block secondary" onclick={() => (app.phase = 'restore')}>Restore from a backup file</button>
+      <button class="block secondary" onclick={() => (app.phase = 'restore')}>Open a backup or copy file</button>
       {#if e2e}<button class="block ghost" onclick={startDemo}>Try it with invented demo data</button>{/if}
     </div>
   {/if}

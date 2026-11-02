@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { app, go, lock, showOperations } from '../app.svelte';
+  import { app, go, lock, mirror, resumeMirror, showOperations } from '../app.svelte';
   import { formatDay, formatMonth, todayIso } from '../../core/dates';
   import { formatCents } from '../../core/money';
   import { BANK_NAMES } from '../../core/model';
@@ -37,7 +37,13 @@
       <button class="block" onclick={() => go('import')}>Import a bank file</button>
     </div>
   {:else}
-    {#if !app.demo && backupAge > 30}
+    {#if mirror.status === 'needs-permission' || mirror.status === 'error'}
+      <div class="notice warn row">
+        <span>The encrypted copy in {mirror.name} is paused.</span>
+        <button class="small secondary" onclick={resumeMirror}>Resume</button>
+      </div>
+    {/if}
+    {#if !app.demo && backupAge > 30 && mirror.status !== 'ok'}
       <div class="notice warn row">
         <span>{data.settings.lastBackupAt ? 'Last backup over a month ago.' : 'No backup yet.'} Your data only lives on this phone.</span>
         <button class="small secondary" onclick={() => go('settings')}>Back up</button>

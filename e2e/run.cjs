@@ -4,6 +4,8 @@ const shots = path.join(__dirname, 'shots');
 (async () => {
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ ...devices['Pixel 7'], acceptDownloads: true });
+  // Use the download path for backups in this test
+  await ctx.addInitScript(() => { delete window.showSaveFilePicker; });
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
@@ -98,7 +100,7 @@ const shots = path.join(__dirname, 'shots');
   await page.fill('input[placeholder=ERASE]', 'ERASE');
   await page.getByRole('button', { name: 'Erase', exact: true }).click();
   await page.getByText('Create my vault').waitFor();
-  await page.getByText('Restore from a backup file').click();
+  await page.getByText('Open a backup or copy file').click();
   await page.setInputFiles('input[type=file]', backupPath);
   await page.fill('#secret', 'violet river paper lamp');
   await page.getByRole('button', { name: 'Restore' }).click();

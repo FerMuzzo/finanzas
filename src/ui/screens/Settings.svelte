@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { app, backupFile, changePassphrase, eraseEverything, isPersisted, lock, persist, requestPersistence, toast } from '../app.svelte';
+  import { app, backupFile, backupName, changePassphrase, chooseMirror, eraseEverything, isPersisted, lock, mirror, persist, requestPersistence, resumeMirror, saveFileWithPicker, stopMirror, toast } from '../app.svelte';
   import { formatDay } from '../../core/dates';
   import { applyOwnNameHints } from '../../core/ownNames';
   import { categorizeAll } from '../../core/categorize';
@@ -70,16 +70,16 @@
 
   async function download() {
     try {
-      const { name, blob } = await backupFile();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = name;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
-      toast('Backup saved to Downloads');
+      const where = await saveFileWithPicker(backupName(), async () => (await backupFile()).blob);
+      if (where) toast(where === 'Downloads' ? 'Backup saved to Downloads' : `Backup saved as ${where}`);
+    } catch (e) {
+      toast((e as Error).message);
+    }
+  }
+
+  async function pickMirror() {
+    try {
+      if (await chooseMirror()) toast(`Encrypted copy saved in ${mirror.name}`);
     } catch (e) {
       toast((e as Error).message);
     }
@@ -132,8 +132,33 @@
   {/if}
 
   <div class="card">
+    <h2>Where your data is saved</h2>
+    <p class="muted">The working copy is always on this phone, in Chrome's private storage for this app, encrypted with your passphrase. Android decides where that storage is, and no other app can read it.</p>
+    <h3 style="margin-top: 12px">Encrypted copy in a file you choose</h3>
+    {#if !mirror.supported}
+      <p class="muted">This browser cannot write to a file you choose. Use Save backup or Share backup below and pick the destination each time.</p>
+    {:else if mirror.status === 'off'}
+      <p class="muted">Choose a folder and a file name, for example in Documents, on an SD card, or in a cloud drive offered by the file picker. The app then rewrites that file after every change. It is encrypted like a backup and can be opened with Restore.</p>
+      <button class="secondary" onclick={pickMirror} disabled={app.demo}>Choose a location</button>
+    {:else}
+      <div class="row" style="margin-bottom: 8px">
+        <span><strong>{mirror.name}</strong></span>
+        {#if mirror.status === 'ok'}<span class="badge accent">Updated after every change</span>{:else if mirror.status === 'needs-permission'}<span class="badge warn">Paused</span>{:else}<span class="badge warn">Error</span>{/if}
+      </div>
+      {#if mirror.lastWrite}<p class="hint">Last written {new Date(mirror.lastWrite).toLocaleString('en-GB')}</p>{/if}
+      {#if mirror.status === 'needs-permission'}<p class="muted">Chrome asks again for permission after the app restarts.</p>{/if}
+      {#if mirror.status === 'error'}<p class="notice bad">{mirror.error || 'The file could not be written.'}</p>{/if}
+      <div class="row" style="gap: 8px">
+        {#if mirror.status !== 'ok'}<button class="block" onclick={resumeMirror}>Allow writing again</button>{/if}
+        <button class="block secondary" onclick={pickMirror}>Change location</button>
+        <button class="block secondary" onclick={stopMirror}>Stop</button>
+      </div>
+    {/if}
+  </div>
+
+  <div class="card">
     <h2>Backups</h2>
-    <p class="muted">Your data only lives on this phone. A backup file is encrypted with your passphrase; keep a copy in your cloud drive or on your computer.</p>
+    <p class="muted">A backup file is encrypted with your passphrase. Save it where you choose, or share it to your cloud drive or computer.</p>
     {#if data.settings.lastBackupAt}<p class="hint">Last backup: {formatDay(data.settings.lastBackupAt.slice(0, 10))}</p>{/if}
     <div class="row" style="gap: 8px">
       <button class="block" onclick={download} disabled={app.demo}>Save backup</button>
@@ -234,7 +259,7 @@
   {#if !app.demo}
     <div class="card">
       <h2>Erase everything</h2>
-      <p class="muted">Deletes the vault from this phone. Only a backup file can bring it back. Type ERASE to confirm.</p>
+      <p class="muted">Deletes the vault from this phone. Only a backup file can bring it back. A copy file you chose yourself is not deleted. Type ERASE to confirm.</p>
       <div class="row" style="gap: 8px">
         <input bind:value={eraseText} placeholder="ERASE" autocapitalize="characters" />
         <button class="danger" disabled={eraseText !== 'ERASE'} onclick={erase}>Erase</button>
