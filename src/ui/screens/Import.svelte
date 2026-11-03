@@ -103,7 +103,7 @@
       type: savingsType ? 'savings' : 'checking',
     });
     persist();
-    toast(`${result.added} operations imported`);
+    toast(`${result.added} operation${result.added === 1 ? '' : 's'} imported`);
     preview = null;
     pdfInputs = [];
   }
@@ -167,7 +167,7 @@
   {#if result}
     <div class="card" style="margin-top: 12px">
       <h2><span class="in"><Icon name="check" size={20} /></span> Import done</h2>
-      <p>{result.added} new operations, {result.duplicates} already in the app{result.merged ? `, ${result.merged} merged with operations you added by hand` : ''}{result.possibleSkipped ? `, ${result.possibleSkipped} possible duplicate${result.possibleSkipped > 1 ? 's' : ''} skipped` : ''}{result.excluded ? `, ${result.excluded} left out by you` : ''}.{result.transfersLinked ? ` ${result.transfersLinked} transfers between your accounts recognized.` : ''}</p>
+      <p>{result.added} new operation{result.added === 1 ? '' : 's'}, {result.duplicates} already in the app{result.merged ? `, ${result.merged} merged with operations you added by hand` : ''}{result.possibleSkipped ? `, ${result.possibleSkipped} possible duplicate${result.possibleSkipped > 1 ? 's' : ''} skipped` : ''}{result.excluded ? `, ${result.excluded} left out by you` : ''}.{result.transfersLinked ? ` ${result.transfersLinked} transfers between your accounts recognized.` : ''}{result.recordedElsewhere ? ` ${result.recordedElsewhere} recorded in your other accounts from their transfer names.` : ''}</p>
       {#if newSuggestions > 0}<p>{newSuggestions} possible regular payment{newSuggestions > 1 ? 's' : ''} to confirm.</p>{/if}
       <div class="row" style="gap: 8px">
         <button class="block secondary" onclick={() => (app.tab = 'home')}>Overview</button>

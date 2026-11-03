@@ -74,6 +74,7 @@ export interface Transaction {
   ownTransferHint?: boolean; // counterparty matches one of your names
   mergedFromManual?: boolean; // added by hand first, then confirmed by the bank file
   mirrorOf?: string; // recorded by hand as the other side of this operation (another of your accounts)
+  autoRecorded?: boolean; // recorded automatically because the operation matched the transfer names of this account
   createdAt: string;
 }
 
@@ -99,6 +100,7 @@ export interface Account {
   interestPaid?: 'yearly' | 'monthly';
   interestTax?: number; // percent taken from interest (0 for Livret A, LDDS, LEP)
   pdfKey?: string; // salted hash of the account number printed on PDF statements, to recognize them
+  transferNames?: string[]; // names shown on transfers to and from this account, to record them here automatically
   createdAt: string;
 }
 

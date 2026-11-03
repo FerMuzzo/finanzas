@@ -43,6 +43,9 @@ export function linkTransfers(data: VaultData): number {
 }
 
 export function unlinkTransfer(data: VaultData, transferId: string): void {
+  // A side you or the app recorded by hand only existed for this transfer: it goes away
+  const mirrors = new Set(data.transactions.filter((t) => t.transferId === transferId && t.mirrorOf && t.source === 'manual').map((t) => t.id));
+  if (mirrors.size) data.transactions = data.transactions.filter((t) => !mirrors.has(t.id));
   for (const t of data.transactions) {
     if (t.transferId === transferId) {
       t.transferId = null;

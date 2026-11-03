@@ -11,6 +11,8 @@
   import Restore from './Restore.svelte';
   import AccountColor from '../AccountColor.svelte';
   import NewAccountForm from '../NewAccountForm.svelte';
+  import AccountSheet from '../AccountSheet.svelte';
+  import type { Account } from '../../core/model';
 
   const data = $derived(app.data!);
   let names = $state(app.data!.settings.holderNames.join(', '));
@@ -25,6 +27,7 @@
   let bioForm = $state(false);
   let bioMsg = $state('');
   let addingAccount = $state(false);
+  let sheetAccount = $state<Account | null>(null);
   let rulePattern = $state('');
   let ruleCat = $state('');
   const learned = $derived(Object.keys(data.merchantMemory).length);
@@ -198,7 +201,7 @@
 
   <div class="card">
     <h2>Your names</h2>
-    <p class="muted">Used to recognize transfers to yourself, for example between your Société Générale and Hello bank accounts. Separate names with commas.</p>
+    <p class="muted">Used to flag transfers to yourself, for example between your Société Générale and Hello bank accounts. Separate names with commas. To have transfers recorded in a given account automatically, set its own transfer names under Accounts below.</p>
     <div class="field"><input bind:value={names} placeholder="First name Last name" /></div>
     <button class="secondary" onclick={saveNames}>Save names</button>
   </div>
@@ -313,6 +316,9 @@
           <input value={a.name} aria-label="Account name" onchange={(e) => { a.name = (e.target as HTMLInputElement).value.trim() || a.name; persist(); }} />
           <small style="display: block; margin: 6px 0 8px">{BANK_NAMES[a.bank]}{a.last4 ? ' · ending ' + a.last4 : ''} · {data.transactions.filter((t) => t.accountId === a.id).length} operations</small>
           <AccountColor bind:value={() => a.color ?? 1, (v) => { a.color = v; persist(); }} label="Color of {a.name}" />
+          <button class="small secondary" style="margin-top: 8px" onclick={() => (sheetAccount = a)}>
+            Transfer names and balance{a.transferNames?.length ? ` (${a.transferNames.length} name${a.transferNames.length === 1 ? '' : 's'})` : ''}
+          </button>
         </li>
       {/each}
     </ul>
@@ -334,3 +340,6 @@
 
   <p class="hint" style="text-align: center">Finanzas {__APP_VERSION__} · data stays on this phone</p>
 </div>
+
+{#if sheetAccount}<AccountSheet account={sheetAccount} onclose={() => (sheetAccount = null)} />{/if}
+

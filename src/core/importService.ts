@@ -15,6 +15,7 @@ import type { Account, BankId, Transaction, VaultData } from './model';
 import { BANK_NAMES, nextAccountColor } from './model';
 import { linkTransfers } from './transfers';
 import { applyOwnNameHints } from './ownNames';
+import { autoRecord } from './ownTransfers';
 import { decodeBytes, hash53, normalizeKey, repairMojibake, uid } from './text';
 
 export const IMPORTERS: Importer[] = [sgImporter, hellobankImporter];
@@ -355,6 +356,7 @@ export interface CommitResult {
   possibleSkipped: number;
   excluded: number; // lines you chose to leave out
   transfersLinked: number;
+  recordedElsewhere: number; // transfers recorded in another of your accounts from its transfer names
 }
 
 export interface CommitOptions {
@@ -477,6 +479,7 @@ export function commitImport(preview: ImportPreview, data: VaultData, accountNam
   data.transactions.sort((a, b) => b.date.localeCompare(a.date) || a.createdAt.localeCompare(b.createdAt));
   applyOwnNameHints(data);
   const transfersLinked = linkTransfers(data);
+  const recordedElsewhere = autoRecord(data);
   categorizeAll(data);
   linkSeries(data);
   const skipped = preview.rows.length - added - merged;
@@ -493,6 +496,7 @@ export function commitImport(preview: ImportPreview, data: VaultData, accountNam
     possibleSkipped,
     excluded,
     transfersLinked,
+    recordedElsewhere,
   };
 }
 

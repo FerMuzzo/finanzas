@@ -5,6 +5,7 @@ import { categorizeAll, suggestCategory } from './categorize';
 import { keyOf } from './merchant';
 import { nextAccountColor, type Account, type Transaction, type VaultData } from './model';
 import { linkSeries } from './recurring';
+import { autoRecord } from './ownTransfers';
 import { uid } from './text';
 
 export interface ManualInput {
@@ -83,6 +84,7 @@ export function addManual(data: VaultData, input: ManualInput): Transaction {
   data.transactions.push(t);
   data.transactions.sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
   data.settings.lastManualAccountId = input.accountId;
+  autoRecord(data, new Set([id]));
   linkSeries(data);
   data.audit.push({ at: t.createdAt, action: 'manual entry' });
   return t;
@@ -97,6 +99,7 @@ export function deleteManual(data: VaultData, id: string): void {
     const others = data.transactions.filter((o) => o.transferId === t.transferId);
     for (const o of others) {
       o.transferId = null;
+      if (t.mirrorOf === o.id) o.notTransfer = true; // you removed its other side: do not record it again
       if (o.categoryId === 'own_transfer' && o.catSource !== 'user') {
         o.categoryId = null;
         o.catSource = undefined;

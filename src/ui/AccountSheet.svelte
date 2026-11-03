@@ -4,6 +4,7 @@
   import { formatCents, parseAmount } from '../core/money';
   import { formatDay, todayIso } from '../core/dates';
   import { balanceAt, checkpoints, setBalance } from '../core/balances';
+  import { cleanNames, findMatches, matchesNames, setTransferNames, staleRecords } from '../core/ownTransfers';
   import { BANK_NAMES, type Account } from '../core/model';
   import { averageMonthlyNetFlow, currentBalance, simulateSavings } from '../core/savings';
   import LineChart from './charts/LineChart.svelte';
@@ -81,6 +82,30 @@
     } finally {
       fixBusy = false;
     }
+  }
+
+  // Transfer names: transfers in your other accounts that show them are recorded here
+  let namesText = $state(untrack(() => (account.transferNames ?? []).join('\n')));
+  const names = $derived(cleanNames(namesText));
+  const namesChanged = $derived(names.join('\n') !== (account.transferNames ?? []).join('\n'));
+  const namePreview = $derived.by(() => {
+    if (!namesChanged) return null;
+    const m = findMatches(data, { accountId: account.id, names });
+    const record = m.record.filter((c) => c.target.id === account.id).map((c) => c.t);
+    const ambiguous = names.length ? m.ambiguous.filter((t) => matchesNames(t, names)) : [];
+    const stale = staleRecords(data, account, names);
+    const into = record.filter((t) => t.amount < 0).reduce((s, t) => s - t.amount, 0);
+    const out = record.filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0);
+    return { record: [...record].sort((x, y) => y.date.localeCompare(x.date)), ambiguous, stale, into, out };
+  });
+  const autoCount = $derived(data.transactions.filter((t) => t.accountId === account.id && t.autoRecorded).length);
+  const accName = (id: string) => data.accounts.find((x) => x.id === id)?.name ?? '';
+
+  function saveNames() {
+    const r = setTransferNames(data, account.id, names);
+    persist();
+    namesText = names.join('\n');
+    toast(r.added || r.removed ? `${r.added} recorded here${r.removed ? `, ${r.removed} removed` : ''}` : 'Names saved');
   }
 
   function setSavings(e: Event) {
@@ -172,6 +197,46 @@
       {/if}
     </div>
 
+    <div class="card flat" data-testid="transfer-names">
+      <h3 style="margin-top: 0">Transfers to and from this account</h3>
+      <p class="hint" style="margin-top: 0">If this account is only reached from another of your accounts, write the name the bank shows on those transfers, one per line: the beneficiary name, or a word of the reason. Every matching transfer in your other accounts is then added here automatically, now and at each import, so the balance stays up to date.</p>
+      <label for="tn" class="sr-only">Names shown on transfers to and from {account.name}</label>
+      <textarea id="tn" rows="2" bind:value={namesText} placeholder="for example M. Firstname Lastname" autocomplete="off"></textarea>
+      {#if namePreview}
+        <div class="preview" data-testid="names-preview">
+          {#if namePreview.record.length}
+            <p style="margin: 8px 0 4px">
+              <strong>{namePreview.record.length} operation{namePreview.record.length === 1 ? '' : 's'}</strong> of your other accounts match{namePreview.record.length === 1 ? 'es' : ''}:
+              {#if namePreview.into}<span class="in num">+{formatCents(namePreview.into)}</span> into this account{/if}{#if namePreview.into && namePreview.out}{', '}{/if}{#if namePreview.out}<span class="num">{formatCents(namePreview.out)}</span> taken out{/if}.
+            </p>
+            <ul class="list">
+              {#each namePreview.record.slice(0, 5) as t (t.id)}
+                <li class="row" style="padding: 6px 0; font-size: 0.88rem">
+                  <span>{formatDay(t.date)} <small class="muted">· {t.counterparty} · {accName(t.accountId)}</small></span>
+                  <span class="num" class:in={t.amount < 0}>{formatCents(-t.amount, t.currency, { sign: true })}</span>
+                </li>
+              {/each}
+            </ul>
+            {#if namePreview.record.length > 5}<p class="hint" style="margin: 0">and {namePreview.record.length - 5} more</p>{/if}
+          {:else if names.length}
+            <p class="muted" style="margin: 8px 0 0">No operation in your other accounts matches yet. New imports will be checked.</p>
+          {/if}
+          {#if namePreview.ambiguous.length}
+            <div class="notice warn" style="margin: 8px 0 0">{namePreview.ambiguous.length} also match{namePreview.ambiguous.length === 1 ? 'es' : ''} the names of another of your accounts and {namePreview.ambiguous.length === 1 ? 'is' : 'are'} left alone. Add a word that only appears for this account, or record {namePreview.ambiguous.length === 1 ? 'it' : 'them'} from the operation.</div>
+          {/if}
+          {#if namePreview.stale.length}
+            <div class="notice warn" style="margin: 8px 0 0">{namePreview.stale.length} operation{namePreview.stale.length === 1 ? '' : 's'} recorded here earlier no longer match{namePreview.stale.length === 1 ? 'es' : ''} and will be removed.</div>
+          {/if}
+          <div class="row" style="gap: 8px; margin-top: 10px">
+            <button class="block secondary" onclick={() => (namesText = (account.transferNames ?? []).join('\n'))}>Cancel</button>
+            <button class="block" onclick={saveNames}>Save</button>
+          </div>
+        </div>
+      {:else if account.transferNames?.length}
+        <p class="hint">{autoCount} operation{autoCount === 1 ? '' : 's'} recorded here automatically so far.</p>
+      {/if}
+    </div>
+
     <div class="card flat">
       <label style="display: flex; gap: 10px; align-items: center; font-weight: 600; margin: 0">
         <input type="checkbox" checked={isSavings} onchange={setSavings} style="width: 22px; min-height: 22px" /> This is a savings account
@@ -248,3 +313,7 @@
     <button class="block secondary" style="margin-top: 8px" onclick={onclose}>Close</button>
   </div>
 </div>
+
+<style>
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+</style>

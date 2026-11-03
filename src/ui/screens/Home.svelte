@@ -118,7 +118,7 @@
 
     <div class="card">
       <h2>Accounts</h2>
-      <p class="hint" style="margin-top: -4px">Tap an account to see or correct its balance, mark it as savings and simulate the interest. Add an account in Settings.</p>
+      <p class="hint" style="margin-top: -4px">Tap an account to see or correct its balance, set the names shown on its transfers, mark it as savings and simulate the interest. Add an account in Settings.</p>
       <ul class="list">
         {#each data.accounts as a (a.id)}
           {@const bal = checkpoints(data, a.id)[0]}

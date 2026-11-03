@@ -111,7 +111,8 @@
 
     <dl class="kv card flat">
       <dt>Account</dt><dd><span class="accdot" style="background: var(--acc-{account?.color ?? 1})"></span>{account?.name}</dd>
-      {#if tx.source === 'manual' && mirrorSource}<dt>Source</dt><dd>Recorded from {mirrorSource.counterparty} ({data.accounts.find((a) => a.id === mirrorSource.accountId)?.name}), waiting for the statement</dd>
+      {#if tx.source === 'manual' && mirrorSource && tx.autoRecorded}<dt>Source</dt><dd>Recorded automatically from {mirrorSource.counterparty} ({data.accounts.find((a) => a.id === mirrorSource.accountId)?.name}): it matches the transfer names of this account</dd>
+      {:else if tx.source === 'manual' && mirrorSource}<dt>Source</dt><dd>Recorded from {mirrorSource.counterparty} ({data.accounts.find((a) => a.id === mirrorSource.accountId)?.name}), waiting for the statement</dd>
       {:else if tx.source === 'manual'}<dt>Source</dt><dd>Added by hand, waiting for the bank file</dd>{:else if tx.mergedFromManual}<dt>Source</dt><dd>Added by hand, confirmed by the bank file</dd>{/if}
       <dt>Booked on</dt><dd>{formatDay(tx.date)}</dd>
       {#if tx.opDate && tx.opDate !== tx.date}<dt>Paid on</dt><dd>{formatDay(tx.opDate)}</dd>{/if}
