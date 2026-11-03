@@ -67,7 +67,7 @@ const shots = path.join(__dirname, 'shots');
   await shot('33_operations_colors');
 
   // Second file: merges the manual pharmacy entry and flags a possible duplicate
-  await nav('Import');
+  await page.getByRole('button', { name: 'Import a bank file' }).first().click();
   await page.setInputFiles('input[type=file]', path.join(__dirname, 'sg_test2.csv'));
   await page.getByText(/in this file/).waitFor();
   r.possibleShown = await page.getByText(/possible duplicate/).count();

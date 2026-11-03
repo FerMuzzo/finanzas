@@ -7,6 +7,7 @@
   import { unlinkTransfer } from '../core/transfers';
   import { linkSeries } from '../core/recurring';
   import { deleteManual } from '../core/manual';
+  import SimilarView from './SimilarView.svelte';
 
   let { tx, onclose }: { tx: Transaction; onclose: () => void } = $props();
 
@@ -38,6 +39,7 @@
     persist();
   }
   let confirmDelete = $state(false);
+  let similar = $state(false);
   function remove() {
     if (!confirmDelete) {
       confirmDelete = true;
@@ -54,6 +56,9 @@
 <div class="sheet-backdrop" onclick={onclose} role="presentation">
   <div class="sheet" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.key === 'Escape' && onclose()} role="dialog" aria-modal="true" aria-label="Operation details" tabindex="-1">
     <div class="grip"></div>
+    {#if similar}
+      <SimilarView {tx} onback={() => (similar = false)} />
+    {:else}
     <div class="row" style="align-items: flex-start">
       <div>
         <h2 style="margin-bottom: 2px">{tx.counterparty}</h2>
@@ -114,6 +119,8 @@
       <button class="block danger" style="margin-top: 16px" onclick={remove}>{confirmDelete ? 'Tap again to delete' : 'Delete this operation'}</button>
     {/if}
 
-    <button class="block secondary" style="margin-top: 16px" onclick={onclose}>Close</button>
+    <button class="block secondary" style="margin-top: 12px" onclick={() => (similar = true)}>Find similar operations</button>
+    {/if}
+    <button class="block secondary" style="margin-top: 12px" onclick={onclose}>Close</button>
   </div>
 </div>

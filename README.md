@@ -33,5 +33,5 @@ node e2e/make_fixture.mjs e2e/sg_test.csv && node e2e/make_hb.mjs e2e/hb_test.cs
 npm run build && python3 e2e/serve_cors.py dist 4173 &
 npm run build -- --mode e2e   # test build that includes the demo
 node e2e/make_fixture2.mjs e2e/sg_test2.csv
-node e2e/run.cjs http://localhost:4173/  # and run2 to run5
+node e2e/run.cjs http://localhost:4173/  # and run2 to run6
 ```

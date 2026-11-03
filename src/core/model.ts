@@ -92,6 +92,9 @@ export interface Account {
   last4?: string;
   idHash?: string; // salted hash of the full account number, never the number itself
   color?: number; // palette slot 1 to 8, used to color code operations
+  interestRate?: number; // yearly percent, for savings accounts
+  interestPaid?: 'yearly' | 'monthly';
+  interestTax?: number; // percent taken from interest (0 for Livret A, LDDS, LEP)
   createdAt: string;
 }
 

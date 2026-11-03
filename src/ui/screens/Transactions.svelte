@@ -46,7 +46,10 @@
 </script>
 
 <div class="page">
-  <div class="topbar"><h1>Operations</h1></div>
+  <div class="topbar">
+    <h1>Operations</h1>
+    <button class="ghost" onclick={() => (app.tab = 'import')} aria-label="Import a bank file"><Icon name="upload" /></button>
+  </div>
 
   <div class="field" style="position: relative">
     <span style="position: absolute; left: 12px; top: 12px; color: var(--muted)"><Icon name="search" size={20} /></span>

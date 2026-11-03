@@ -22,7 +22,7 @@ import {
 import { todayIso } from '../core/dates';
 
 export type Phase = 'loading' | 'welcome' | 'create' | 'recovery' | 'locked' | 'restore' | 'ready';
-export type Tab = 'home' | 'spending' | 'regular' | 'transactions' | 'import' | 'settings';
+export type Tab = 'home' | 'spending' | 'charts' | 'regular' | 'transactions' | 'import' | 'settings';
 
 export const app = $state({
   phase: 'loading' as Phase,

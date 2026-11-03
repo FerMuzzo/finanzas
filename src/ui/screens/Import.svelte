@@ -53,7 +53,10 @@
 </script>
 
 <div class="page">
-  <div class="topbar"><h1>Import</h1></div>
+  <div class="topbar">
+    <h1>Import</h1>
+    <button class="small ghost" onclick={() => (app.tab = 'home')}>Close</button>
+  </div>
 
   {#if !preview}
     <label class="dropzone" data-testid="dropzone">

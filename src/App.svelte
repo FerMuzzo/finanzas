@@ -14,6 +14,7 @@
   import Spending from './ui/screens/Spending.svelte';
   import Regular from './ui/screens/Regular.svelte';
   import AddSheet from './ui/AddSheet.svelte';
+  import Charts from './ui/screens/Charts.svelte';
 
   onMount(() => {
     void init();
@@ -22,10 +23,10 @@
 
   const tabs = [
     { id: 'home', label: 'Overview', icon: 'home' },
-    { id: 'spending', label: 'Spending', icon: 'chart' },
+    { id: 'spending', label: 'Spending', icon: 'pie' },
+    { id: 'charts', label: 'Charts', icon: 'chart' },
     { id: 'regular', label: 'Regular', icon: 'repeat' },
     { id: 'transactions', label: 'Operations', icon: 'list' },
-    { id: 'import', label: 'Import', icon: 'upload' },
   ] as const;
 
   function go(id: (typeof tabs)[number]['id']) {
@@ -52,6 +53,8 @@
     <Home />
   {:else if app.tab === 'spending'}
     <Spending />
+  {:else if app.tab === 'charts'}
+    <Charts />
   {:else if app.tab === 'regular'}
     <Regular />
   {:else if app.tab === 'transactions'}
