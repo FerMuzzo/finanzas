@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { app, backupFile, backupName, changePassphrase, chooseMirror, eraseEverything, isPersisted, lock, mirror, persist, requestPersistence, resumeMirror, saveFileWithPicker, stopMirror, toast } from '../app.svelte';
+  import { app, backupFile, backupName, changePassphrase, chooseMirror, disableBio, enableBio, eraseEverything, isPersisted, lock, mirror, persist, requestPersistence, resumeMirror, saveFileWithPicker, stopMirror, toast } from '../app.svelte';
   import { formatDay } from '../../core/dates';
   import { applyOwnNameHints } from '../../core/ownNames';
   import { categorizeAll } from '../../core/categorize';
@@ -20,6 +20,9 @@
   let next = $state('');
   let passMsg = $state('');
   let eraseText = $state('');
+  let bioPass = $state('');
+  let bioForm = $state(false);
+  let bioMsg = $state('');
   let rulePattern = $state('');
   let ruleCat = $state('');
   const learned = $derived(Object.keys(data.merchantMemory).length);
@@ -116,6 +119,27 @@
     } catch {
       passMsg = 'The current passphrase is wrong.';
     }
+  }
+
+  async function turnOnBio(e: SubmitEvent) {
+    e.preventDefault();
+    bioMsg = '';
+    try {
+      await enableBio(bioPass);
+      bioPass = '';
+      bioForm = false;
+      toast('Fingerprint unlock is on');
+    } catch (err) {
+      const er = err as Error;
+      if (/Wrong/.test(er.message)) bioMsg = 'The passphrase is wrong.';
+      else if (er.name === 'NotAllowedError' || er.name === 'AbortError') bioMsg = 'Cancelled. Try again when ready.';
+      else bioMsg = er.message;
+    }
+  }
+
+  async function turnOffBio() {
+    await disableBio();
+    toast('Fingerprint unlock is off');
   }
 
   async function erase() {
@@ -217,6 +241,36 @@
         <option value="10">10 minutes</option>
       </select>
       <div class="hint">The app also locks when it stays in the background for more than a minute.</div>
+    </div>
+    <div style="margin-bottom: 14px">
+      <div class="row">
+        <strong>Unlock with fingerprint</strong>
+        {#if app.bioOn}<span class="badge accent">On</span>{/if}
+      </div>
+      {#if app.demo}
+        <p class="hint">Not available in the demo.</p>
+      {:else if !app.bioAvailable && !app.bioOn}
+        <p class="hint">This phone or browser does not offer fingerprint unlock for web apps. Check that a screen lock and a fingerprint are set up in Android settings.</p>
+      {:else if app.bioOn}
+        <p class="hint">Your fingerprint (or screen lock) unlocks the app. The passphrase and the recovery key still work too.</p>
+        <button class="secondary small" onclick={turnOffBio}>Turn off</button>
+      {:else if !bioForm}
+        <p class="hint">Uses a passkey stored by Android and protected by your fingerprint. It gives the app the secret that opens your encrypted data, so nothing usable is left on the phone without it.</p>
+        <button class="secondary small" onclick={() => (bioForm = true)}>Turn on</button>
+      {:else}
+        <form onsubmit={turnOnBio} style="margin-top: 8px">
+          <div class="field">
+            <label for="bp">Confirm with your passphrase</label>
+            <input id="bp" type="password" autocomplete="current-password" bind:value={bioPass} />
+          </div>
+          {#if bioMsg}<div class="notice bad">{bioMsg}</div>{/if}
+          <div class="row" style="gap: 8px">
+            <button class="block secondary" type="button" onclick={() => { bioForm = false; bioMsg = ''; }}>Cancel</button>
+            <button class="block" type="submit" disabled={!bioPass || app.busy}>Continue</button>
+          </div>
+          <p class="hint">Android then asks for your fingerprint, once or twice.</p>
+        </form>
+      {/if}
     </div>
     <div class="row" style="gap: 8px">
       <button class="block secondary" onclick={lock}>Lock now</button>

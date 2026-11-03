@@ -12,12 +12,20 @@ export interface Wrapped {
   ct: string;
 }
 
+export interface BioWrap {
+  credentialId: string; // passkey used for fingerprint unlock
+  prfSalt: string; // input given to the passkey's PRF extension
+  wrapped: Wrapped; // data key wrapped by a key derived from the passkey's secret
+  createdAt: string;
+}
+
 export interface VaultHeader {
   format: 'finanzas-vault';
   v: 1;
   kdf: { name: 'PBKDF2'; hash: 'SHA-256'; iterations: number; salt: string };
   pass: Wrapped;
   recovery: { salt: string; wrapped: Wrapped };
+  bio?: BioWrap;
   createdAt: string;
 }
 
@@ -128,6 +136,49 @@ async function unwrap(w: Wrapped, kek: CryptoKey, extractable = false): Promise<
   } catch {
     throw new WrongKeyError();
   }
+}
+
+// Fingerprint unlock: the phone's passkey returns a secret (WebAuthn PRF extension) only after
+// your fingerprint or screen lock. That secret derives a key that wraps the data key, like the
+// passphrase does. Without the passkey there is nothing in the app that can open the data.
+
+async function prfKek(prfOutput: ArrayBuffer | Uint8Array, salt: Uint8Array<ArrayBuffer>): Promise<CryptoKey> {
+  const raw = prfOutput instanceof Uint8Array ? prfOutput : new Uint8Array(prfOutput);
+  const base = await subtle().importKey('raw', new Uint8Array(raw), 'HKDF', false, ['deriveKey']);
+  return subtle().deriveKey(
+    { name: 'HKDF', hash: 'SHA-256', salt, info: new TextEncoder().encode('finanzas-fingerprint') },
+    base,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['wrapKey', 'unwrapKey'],
+  );
+}
+
+export async function addBioWrap(
+  header: VaultHeader,
+  extractableDek: CryptoKey,
+  credentialId: Uint8Array,
+  prfSalt: Uint8Array<ArrayBuffer>,
+  prfOutput: ArrayBuffer | Uint8Array,
+): Promise<VaultHeader> {
+  return {
+    ...header,
+    bio: {
+      credentialId: toB64(credentialId),
+      prfSalt: toB64(prfSalt),
+      wrapped: await wrap(extractableDek, await prfKek(prfOutput, prfSalt)),
+      createdAt: new Date().toISOString(),
+    },
+  };
+}
+
+export async function unwrapWithPrf(header: VaultHeader, prfOutput: ArrayBuffer | Uint8Array): Promise<CryptoKey> {
+  if (!header.bio) throw new WrongKeyError();
+  return unwrap(header.bio.wrapped, await prfKek(prfOutput, fromB64(header.bio.prfSalt)));
+}
+
+export function newPrfSalt(): Uint8Array<ArrayBuffer> {
+  return random(32);
 }
 
 export interface NewVault {

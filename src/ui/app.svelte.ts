@@ -2,7 +2,12 @@
 
 import { emptyVault, migrateVault, type VaultData } from '../core/model';
 import { kv } from '../core/storage';
+import { bioAvailable, enrollBio, evalPrf } from './biometric';
 import {
+  addBioWrap,
+  fromB64,
+  newPrfSalt,
+  unwrapWithPrf,
   createVault,
   decryptJson,
   encryptJson,
@@ -31,6 +36,9 @@ export const app = $state({
   failedAttempts: 0,
   selectedMonth: '',
   txFilter: { accountId: '', month: '', query: '', categoryId: '' },
+  bioOn: false, // fingerprint unlock set up on this vault
+  bioAvailable: false, // the phone offers a fingerprint or screen lock passkey
+  autoBio: false, // offer the fingerprint prompt once when the app starts
 });
 
 let key: CryptoKey | null = null;
@@ -179,6 +187,44 @@ export async function init(): Promise<void> {
     header = null;
   }
   app.phase = header ? 'locked' : 'welcome';
+  app.bioOn = !!header?.bio;
+  app.autoBio = app.bioOn;
+  app.bioAvailable = await bioAvailable();
+}
+
+/** Turn on fingerprint unlock. The passphrase is asked again to prove it is you. */
+export async function enableBio(passphrase: string): Promise<void> {
+  if (!header) throw new Error('No vault on this device.');
+  const dek = await unwrapWithPassphrase(header, passphrase, true);
+  const salt = newPrfSalt();
+  const { credentialId, prf } = await enrollBio(salt);
+  header = await addBioWrap(header, dek, credentialId, salt, prf);
+  await kv.set('header', header);
+  app.bioOn = true;
+  app.data?.audit.push({ at: new Date().toISOString(), action: 'fingerprint unlock turned on' });
+  persist();
+}
+
+export async function disableBio(): Promise<void> {
+  if (!header) return;
+  const { bio: _removed, ...rest } = header;
+  header = rest;
+  await kv.set('header', header);
+  app.bioOn = false;
+  app.data?.audit.push({ at: new Date().toISOString(), action: 'fingerprint unlock turned off' });
+  persist();
+}
+
+export async function unlockWithBio(): Promise<void> {
+  if (!header?.bio) throw new Error('Fingerprint unlock is not set up.');
+  app.busy = true;
+  try {
+    const prf = await evalPrf(fromB64(header.bio.credentialId), fromB64(header.bio.prfSalt));
+    const k = await unwrapWithPrf(header, prf);
+    await openWith(k);
+  } finally {
+    app.busy = false;
+  }
 }
 
 export function toast(msg: string): void {
@@ -341,6 +387,7 @@ export async function lock(): Promise<void> {
 export async function eraseEverything(): Promise<void> {
   key = null;
   header = null;
+  app.bioOn = false;
   app.data = null;
   app.demo = false;
   mirrorHandle = null;
@@ -379,6 +426,7 @@ export async function restoreFromBackup(text: string, secret: string): Promise<v
     const data = migrateVault(await decryptJson<VaultData>(k, b.data));
     await kv.setMany({ header: b.header, data: b.data });
     header = b.header;
+    app.bioOn = !!header.bio;
     key = k;
     app.data = data;
     app.demo = false;

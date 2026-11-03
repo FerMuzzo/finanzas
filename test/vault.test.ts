@@ -110,3 +110,21 @@ describe('own transfers', () => {
     expect(sgSide.ownTransferHint).toBe(true);
   });
 });
+
+describe('fingerprint unlock', () => {
+  it('wraps the data key with the passkey secret and unlocks only with the same secret', async () => {
+    const { addBioWrap, newPrfSalt, unwrapWithPrf } = await import('../src/core/vault');
+    const { header, key } = await createVault('finger test pass', FAST);
+    const blob = await encryptJson(key, { ok: 1 });
+    const dek = await unwrapWithPassphrase(header, 'finger test pass', true);
+    const secret = crypto.getRandomValues(new Uint8Array(32));
+    const h2 = await addBioWrap(header, dek, new Uint8Array([1, 2, 3]), newPrfSalt(), secret);
+    expect(h2.bio?.credentialId).toBe('AQID');
+    const k = await unwrapWithPrf(h2, secret);
+    expect(await decryptJson(k, blob)).toEqual({ ok: 1 });
+    await expect(unwrapWithPrf(h2, crypto.getRandomValues(new Uint8Array(32)))).rejects.toBeInstanceOf(WrongKeyError);
+    // the passphrase still works, and changing it keeps fingerprint unlock working
+    const h3 = await setNewPassphrase(h2, { passphrase: 'finger test pass' }, 'another pass phrase');
+    expect(await decryptJson(await unwrapWithPrf(h3, secret), blob)).toEqual({ ok: 1 });
+  });
+});
