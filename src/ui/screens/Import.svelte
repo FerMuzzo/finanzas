@@ -171,7 +171,7 @@
       {#if newSuggestions > 0}<p>{newSuggestions} possible regular payment{newSuggestions > 1 ? 's' : ''} to confirm.</p>{/if}
       <div class="row" style="gap: 8px">
         <button class="block secondary" onclick={() => (app.tab = 'home')}>Overview</button>
-        <button class="block" onclick={() => showOperations({ accountId: result!.accountId })}>Operations</button>
+        <button class="block" onclick={() => showOperations({ accountIds: [result!.accountId] })}>Operations</button>
       </div>
     </div>
   {/if}

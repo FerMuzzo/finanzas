@@ -12,7 +12,7 @@ import { emptyVault, migrateVault, type VaultData } from '../src/core/model';
 import { addAccount, recordInAccount, recordManyInAccount } from '../src/core/accounts';
 import { addManual, deleteManual } from '../src/core/manual';
 import { balanceAt, currentBalanceOf, setBalance } from '../src/core/balances';
-import { monthlySummaries } from '../src/core/summary';
+import { monthlySummaries, transferFlows } from '../src/core/summary';
 import { sgRawBytes } from './fixtures';
 
 const cache = new Map<string, ParsedPdf>();
@@ -187,5 +187,33 @@ describe('monthly statements of one account', () => {
     const again = previewPdf([await pdf('statement_sg_like.pdf')], v);
     expect(again.account?.id).toBe(acc.id);
     expect(again.newCount).toBe(0);
+  });
+});
+
+describe('transfers between your accounts', () => {
+  it('groups them by direction, once per transfer, with the account filter', () => {
+    const v = vault();
+    const cur = addAccount(v, { name: 'Current', bank: 'other', type: 'checking' });
+    const sav = addAccount(v, { name: 'Livret', bank: 'other', type: 'savings' });
+    const other = addAccount(v, { name: 'Joint', bank: 'other', type: 'checking' });
+    const a = addManual(v, { accountId: cur.id, date: '2026-05-02', amount: -20000, description: 'To livret', categoryId: null });
+    const b = addManual(v, { accountId: cur.id, date: '2026-05-20', amount: -5000, description: 'To livret', categoryId: null });
+    const back = addManual(v, { accountId: sav.id, date: '2026-05-25', amount: -3000, description: 'Back to current', categoryId: null });
+    recordManyInAccount(v, [a.id, b.id], sav.id);
+    recordInAccount(v, back.id, cur.id);
+    addManual(v, { accountId: other.id, date: '2026-05-10', amount: -7000, description: 'Old account', categoryId: 'own_transfer' });
+    addManual(v, { accountId: cur.id, date: '2026-04-10', amount: -9900, description: 'April', categoryId: 'own_transfer' });
+
+    const all = transferFlows(v, ['2026-05']);
+    expect(all.flows.map((f) => [f.fromId, f.toId, f.amount, f.count])).toEqual([
+      [cur.id, sav.id, 25000, 2],
+      [other.id, null, 7000, 1],
+      [sav.id, cur.id, 3000, 1],
+    ]);
+    expect(all.total).toBe(35000);
+    expect(transferFlows(v, ['2026-05'], { accountIds: [sav.id] }).total).toBe(28000);
+    expect(transferFlows(v, ['2026-04', '2026-05'], { average: true }).total).toBe(Math.round(35000 / 2) + Math.round(9900 / 2));
+    // Linked transfers are still in the operations, only left out of spending
+    expect(monthlySummaries(v).find((m) => m.month === '2026-05')!.spending).toBe(0);
   });
 });

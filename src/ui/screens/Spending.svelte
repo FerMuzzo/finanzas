@@ -2,15 +2,18 @@
   import { app, showOperations } from '../app.svelte';
   import { formatMonth, formatShortMonth, monthOf, todayIso } from '../../core/dates';
   import { formatCents } from '../../core/money';
-  import { completeMonths, fixedVersusVariable, spendingByCategory, topMerchants } from '../../core/summary';
+  import { completeMonths, fixedVersusVariable, spendingByCategory, topMerchants, transferFlows } from '../../core/summary';
+  import AccountChips from '../AccountChips.svelte';
 
   const data = $derived(app.data!);
   let mode = $state<'month' | 'average'>('month');
   let span = $state(3);
   let open = $state<string | null>(null);
 
-  const allMonths = $derived([...new Set(data.transactions.map((t) => monthOf(t.date)))].sort().reverse());
-  const full = $derived(completeMonths(data, todayIso()));
+  const accountIds = $derived(app.spendingAccounts);
+  const inAccounts = $derived(data.transactions.filter((t) => !accountIds.length || accountIds.includes(t.accountId)));
+  const allMonths = $derived([...new Set(inAccounts.map((t) => monthOf(t.date)))].sort().reverse());
+  const full = $derived(completeMonths(data, todayIso(), accountIds));
   let month = $state('');
   const selMonth = $derived(month && allMonths.includes(month) ? month : full[0] ?? allMonths[0] ?? '');
   const spans = $derived([3, 6, 12].filter((n, i) => i === 0 || full.length >= n));
@@ -18,17 +21,20 @@
   const months = $derived(mode === 'month' ? [selMonth] : avgMonths);
   const average = $derived(mode === 'average');
 
-  const cats = $derived(spendingByCategory(data, months, { average }));
+  const cats = $derived(spendingByCategory(data, months, { average, accountIds }));
   const total = $derived(cats.reduce((s, c) => s + c.amount, 0));
   const max = $derived(Math.max(1, ...cats.map((c) => c.amount)));
 
   // Reference for a single month: the average of up to 3 full months before it
   const refMonths = $derived(full.filter((m) => m < selMonth).slice(0, 3));
-  const ref = $derived(mode === 'month' && refMonths.length >= 2 ? new Map(spendingByCategory(data, refMonths, { average: true }).map((c) => [c.categoryId, c.amount])) : null);
+  const ref = $derived(mode === 'month' && refMonths.length >= 2 ? new Map(spendingByCategory(data, refMonths, { average: true, accountIds }).map((c) => [c.categoryId, c.amount])) : null);
   const refTotal = $derived(ref ? [...ref.values()].reduce((s, x) => s + x, 0) : 0);
 
-  const fv = $derived(fixedVersusVariable(data, months, average));
-  const merchants = $derived(topMerchants(data, months, { limit: 8, average }));
+  const fv = $derived(fixedVersusVariable(data, months, average, accountIds));
+  const merchants = $derived(topMerchants(data, months, { limit: 8, average, accountIds }));
+  const moved = $derived(transferFlows(data, months, { average, accountIds }));
+  const accName = (id: string | null, other?: string) => (id ? data.accounts.find((a) => a.id === id)?.name ?? 'an account' : other ? `${other} (not in the app)` : 'outside the app');
+  const accColor = (id: string | null) => (id ? data.accounts.find((a) => a.id === id)?.color ?? 1 : 0);
   const hasSeries = $derived(data.recurring.some((r) => r.status === 'confirmed'));
 
   const catName = (id: string | null) => (id ? data.categories.find((c) => c.id === id)?.name ?? id : 'Not categorized');
@@ -50,15 +56,20 @@
   }
 
   function seeOps(id: string | null) {
-    showOperations({ categoryId: id ?? '__none', month: mode === 'month' ? selMonth : '' });
+    showOperations({ categoryId: id ?? '__none', month: mode === 'month' ? selMonth : '', accountIds: [...accountIds] });
+  }
+  function seeTransfers(fromId: string | null, toId: string | null) {
+    const ids = [fromId ?? toId].filter(Boolean) as string[];
+    showOperations({ categoryId: '__transfers', month: mode === 'month' ? selMonth : '', accountIds: ids });
   }
 </script>
 
 <div class="page">
   <div class="topbar"><h1>Spending</h1></div>
+  <AccountChips bind:selected={app.spendingAccounts} label="Accounts in this view" />
 
   {#if allMonths.length === 0}
-    <div class="card"><p class="muted" style="margin: 0">Import a bank file to see where your money goes.</p></div>
+    <div class="card"><p class="muted" style="margin: 0">{accountIds.length ? 'No operations in the chosen accounts.' : 'Import a bank file to see where your money goes.'}</p></div>
   {:else}
     <div class="seg" role="tablist">
       <button class:on={mode === 'month'} onclick={() => (mode = 'month')} role="tab" aria-selected={mode === 'month'}>One month</button>
@@ -138,6 +149,32 @@
       {:else}
         <p class="muted">Confirm your regular payments to see how much of your spending is committed every month.</p>
         <button class="secondary" onclick={() => (app.tab = 'regular')}>Review regular payments</button>
+      {/if}
+    </div>
+
+    <div class="card" data-testid="transfers-card">
+      <div class="row"><h2 style="margin: 0">Between your accounts</h2><span class="num" style="font-weight: 650">{formatCents(moved.total)}</span></div>
+      <p class="hint" style="margin: 2px 0 8px">{average ? 'Moved per month on average' : 'Moved'} from one of your accounts to another. Not counted as spending or income.</p>
+      {#if moved.flows.length === 0}
+        <p class="muted" style="margin: 0">No transfers between your accounts in this period.</p>
+      {:else}
+        <ul class="list">
+          {#each moved.flows as f (f.key)}
+            <li>
+              <button class="catrow flow" onclick={() => seeTransfers(f.fromId, f.toId)}>
+                <div class="top">
+                  <span class="name">
+                    {#if f.fromId}<span class="accdot" style="background: var(--acc-{accColor(f.fromId)})"></span>{/if}{accName(f.fromId, f.otherName)}
+                    <span class="muted"> to </span>
+                    {#if f.toId}<span class="accdot" style="background: var(--acc-{accColor(f.toId)})"></span>{/if}{accName(f.toId, f.otherName)}
+                  </span>
+                  <span class="num" style="font-weight: 650">{formatCents(f.amount)}</span>
+                </div>
+                <span class="delta">{average ? perMonth(f.count).replace('payment', 'transfer') : `${f.count} transfer${f.count === 1 ? '' : 's'}`}</span>
+              </button>
+            </li>
+          {/each}
+        </ul>
       {/if}
     </div>
 

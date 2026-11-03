@@ -6,6 +6,8 @@
   import { normalizeKey } from '../../core/text';
   import Icon from '../Icon.svelte';
   import TxDetail from '../TxDetail.svelte';
+  import AccountChips from '../AccountChips.svelte';
+  import { isInternal } from '../../core/summary';
 
   const data = $derived(app.data!);
   let selected = $state<Transaction | null>(null);
@@ -16,19 +18,27 @@
     const q = normalizeKey(app.txFilter.query);
     return data.transactions.filter(
       (t) =>
-        (!app.txFilter.accountId || t.accountId === app.txFilter.accountId) &&
+        (!app.txFilter.accountIds.length || app.txFilter.accountIds.includes(t.accountId)) &&
         (!app.txFilter.month || monthOf(t.date) === app.txFilter.month) &&
-        (!app.txFilter.categoryId || (app.txFilter.categoryId === '__none' ? !t.categoryId && !t.transferId : t.categoryId === app.txFilter.categoryId)) &&
+        (!app.txFilter.categoryId ||
+          (app.txFilter.categoryId === '__none'
+            ? !t.categoryId && !t.transferId
+            : app.txFilter.categoryId === '__transfers'
+              ? isInternal(t)
+              : t.categoryId === app.txFilter.categoryId)) &&
         (!q || normalizeKey(t.counterparty + ' ' + t.detail + ' ' + (t.note ?? '')).includes(q)),
     );
   });
   const totals = $derived.by(() => {
-    let inc = 0, out = 0;
+    let inc = 0, out = 0, movedIn = 0, movedOut = 0;
     for (const t of filtered) {
-      if (t.transferId || t.categoryId === 'own_transfer') continue;
+      if (isInternal(t)) {
+        if (t.amount >= 0) movedIn += t.amount; else movedOut += -t.amount;
+        continue;
+      }
       if (t.amount >= 0) inc += t.amount; else out += -t.amount;
     }
-    return { inc, out };
+    return { inc, out, movedIn, movedOut };
   });
   const groups = $derived.by(() => {
     const out: { day: string; items: Transaction[] }[] = [];
@@ -41,6 +51,23 @@
   });
   const catName = (id: string | null) => (id ? data.categories.find((c) => c.id === id)?.name : undefined);
   const multiAccount = $derived(data.accounts.length > 1);
+  // For a transfer between your accounts, the account on the other side
+  const otherSide = $derived.by(() => {
+    const byLink = new Map<string, Transaction[]>();
+    for (const t of data.transactions) if (t.transferId) byLink.set(t.transferId, [...(byLink.get(t.transferId) ?? []), t]);
+    const out = new Map<string, string>();
+    for (const pair of byLink.values()) {
+      if (pair.length !== 2) continue;
+      out.set(pair[0].id, pair[1].accountId);
+      out.set(pair[1].id, pair[0].accountId);
+    }
+    return out;
+  });
+  function subLine(t: Transaction): string {
+    const other = otherSide.get(t.id);
+    const what = other ? `${t.amount < 0 ? 'To' : 'From'} ${accountName(other)}` : catName(t.categoryId) ?? OP_LABELS[t.opType];
+    return what + (t.foreign && t.foreign.currency !== 'EUR' ? ' · ' + t.foreign.currency : '') + (multiAccount ? ' · ' + accountName(t.accountId) : '');
+  }
   const accountName = (id: string) => data.accounts.find((a) => a.id === id)?.name ?? '';
   const accountColor = (id: string) => data.accounts.find((a) => a.id === id)?.color ?? 1;
 </script>
@@ -65,18 +92,14 @@
   <select bind:value={app.txFilter.categoryId} aria-label="Category" style="margin-bottom: 8px">
     <option value="">All categories</option>
     <option value="__none">Not categorized yet</option>
-    {#each data.categories as c}<option value={c.id}>{c.name}</option>{/each}
+    <option value="__transfers">Transfers between my accounts</option>
+    {#each data.categories.filter((c) => c.id !== 'own_transfer') as c}<option value={c.id}>{c.name}</option>{/each}
   </select>
-  {#if multiAccount}
-    <div class="chips" style="margin-bottom: 6px">
-      {#each data.accounts as a (a.id)}
-        <button class="chip" class:on={app.txFilter.accountId === a.id} onclick={() => (app.txFilter.accountId = app.txFilter.accountId === a.id ? '' : a.id)}>
-          <span class="accdot" style="background: var(--acc-{a.color ?? 1})"></span>{a.name}
-        </button>
-      {/each}
-    </div>
+  <AccountChips bind:selected={app.txFilter.accountIds} />
+  <p class="hint" style="margin-bottom: 0">{filtered.length} operation{filtered.length === 1 ? "" : "s"} · in <span class="num in">{formatCents(totals.inc)}</span> · out <span class="num">{formatCents(totals.out)}</span></p>
+  {#if totals.movedIn || totals.movedOut}
+    <p class="hint" style="margin-top: 2px">Between your accounts: in <span class="num">{formatCents(totals.movedIn)}</span> · out <span class="num">{formatCents(totals.movedOut)}</span>, not counted above</p>
   {/if}
-  <p class="hint">{filtered.length} operations · in <span class="num in">{formatCents(totals.inc)}</span> · out <span class="num">{formatCents(totals.out)}</span></p>
 
   {#if filtered.length === 0}
     <div class="card"><p class="muted" style="margin: 0">Nothing matches.</p></div>
@@ -93,7 +116,7 @@
               <div class="main">
                 <div class="name">{t.counterparty}</div>
                 <div class="sub">
-                  {catName(t.categoryId) ?? OP_LABELS[t.opType]}{t.foreign && t.foreign.currency !== 'EUR' ? ' · ' + t.foreign.currency : ''}{multiAccount ? ' · ' + accountName(t.accountId) : ''}
+                  {subLine(t)}
                 </div>
               </div>
               <div style="text-align: right">

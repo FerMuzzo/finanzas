@@ -3,7 +3,7 @@
   import { formatDay, formatMonth, todayIso } from '../../core/dates';
   import { formatCents } from '../../core/money';
   import { BANK_NAMES } from '../../core/model';
-  import { monthlySummaries, spendingByCategory } from '../../core/summary';
+  import { monthlySummaries, spendingByCategory, transferFlows } from '../../core/summary';
   import { suggestions, seriesStatuses } from '../../core/recurring';
   import Icon from '../Icon.svelte';
   import MonthBars from '../MonthBars.svelte';
@@ -25,6 +25,7 @@
   const regularOut = $derived(seriesStatuses(data).filter((s) => s.monthly < 0).reduce((s, x) => s - x.monthly, 0));
   const backupAge = $derived(data.settings.lastBackupAt ? (Date.now() - Date.parse(data.settings.lastBackupAt)) / 86400000 : Infinity);
   const isCurrent = $derived(month === todayIso().slice(0, 7));
+  const moved = $derived(month ? transferFlows(data, [month]).total : 0);
 </script>
 
 <div class="page">
@@ -73,7 +74,13 @@
       <div style="margin-top: 14px">
         <MonthBars {months} selected={month} onselect={(m) => (app.selectedMonth = m)} />
       </div>
-      <p class="hint" style="margin: 8px 0 0">Transfers between your own accounts are left out.</p>
+      {#if moved}
+        <button class="catrow" style="padding: 8px 0 0" onclick={() => showOperations({ month, categoryId: '__transfers' })} data-testid="moved-between">
+          <div class="top"><span class="delta">Moved between your accounts, not counted above</span><span class="num" style="font-size: 0.9rem">{formatCents(moved)} ›</span></div>
+        </button>
+      {:else}
+        <p class="hint" style="margin: 8px 0 0">Transfers between your own accounts are not counted here.</p>
+      {/if}
     </div>
 
     {#if toReview > 0 || sugg > 0}

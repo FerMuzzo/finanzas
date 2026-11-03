@@ -35,7 +35,8 @@ export const app = $state({
   adding: false,
   failedAttempts: 0,
   selectedMonth: '',
-  txFilter: { accountId: '', month: '', query: '', categoryId: '' },
+  txFilter: { accountIds: [] as string[], month: '', query: '', categoryId: '' },
+  spendingAccounts: [] as string[], // accounts shown in the Spending tab, none means all
   bioOn: false, // fingerprint unlock set up on this vault
   bioAvailable: false, // the phone offers a fingerprint or screen lock passkey
   autoBio: false, // offer the fingerprint prompt once when the app starts
@@ -402,7 +403,8 @@ export async function lock(): Promise<void> {
   key = null;
   app.data = null;
   app.selectedMonth = '';
-  app.txFilter = { accountId: '', month: '', query: '', categoryId: '' };
+  app.txFilter = { accountIds: [], month: '', query: '', categoryId: '' };
+  app.spendingAccounts = [];
   app.phase = app.demo ? 'welcome' : 'locked';
   app.demo = false;
 }
@@ -513,7 +515,7 @@ export function startAutoLock(): void {
 }
 
 export function showOperations(filter: Partial<typeof app.txFilter>): void {
-  app.txFilter = { accountId: '', month: '', query: '', categoryId: '', ...filter };
+  app.txFilter = { accountIds: [], month: '', query: '', categoryId: '', ...filter };
   app.tab = 'transactions';
   window.scrollTo({ top: 0 });
 }
