@@ -227,6 +227,29 @@ export async function unlockWithBio(): Promise<void> {
   }
 }
 
+/**
+ * Ask again who you are before a sensitive change (for example setting an account balance by
+ * hand): the passphrase, or the fingerprint when it is set up. Throws when it does not match.
+ */
+export async function confirmIdentity(how: { passphrase: string } | { bio: true }): Promise<void> {
+  if (app.demo) return; // the demo has no vault to check against
+  if (!header) throw new Error('No vault on this device.');
+  if ('bio' in how) {
+    if (!header.bio) throw new Error('Fingerprint unlock is not set up.');
+    const prf = await evalPrf(fromB64(header.bio.credentialId), fromB64(header.bio.prfSalt));
+    await unwrapWithPrf(header, prf);
+    return;
+  }
+  await slowDownAfterFailures();
+  try {
+    await unwrapWithPassphrase(header, how.passphrase);
+    app.failedAttempts = 0;
+  } catch {
+    app.failedAttempts++;
+    throw new Error('This passphrase is not correct.');
+  }
+}
+
 export function toast(msg: string): void {
   app.toast = msg;
   setTimeout(() => {

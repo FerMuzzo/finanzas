@@ -88,6 +88,20 @@ export function addManual(data: VaultData, input: ManualInput): Transaction {
   return t;
 }
 
+/** Remove an operation added by hand; if it was one side of a transfer, the other side is unlinked. */
 export function deleteManual(data: VaultData, id: string): void {
-  data.transactions = data.transactions.filter((t) => !(t.id === id && t.source === 'manual'));
+  const t = data.transactions.find((x) => x.id === id && x.source === 'manual');
+  if (!t) return;
+  data.transactions = data.transactions.filter((x) => x.id !== id);
+  if (t.transferId) {
+    const others = data.transactions.filter((o) => o.transferId === t.transferId);
+    for (const o of others) {
+      o.transferId = null;
+      if (o.categoryId === 'own_transfer' && o.catSource !== 'user') {
+        o.categoryId = null;
+        o.catSource = undefined;
+      }
+    }
+    categorizeAll(data, (x) => others.includes(x));
+  }
 }

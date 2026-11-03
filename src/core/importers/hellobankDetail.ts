@@ -5,7 +5,7 @@
 import { parseFrDate } from '../dates';
 import { cleanMerchant, displayMerchant, keyOf } from '../merchant';
 import { squash, titleCase } from '../text';
-import type { DetailInfo } from './sgDetail';
+import { accountWithdrawal, interestInfo, isAccountWithdrawal, isInterest, type DetailInfo } from './sgDetail';
 
 function section(text: string, marker: RegExp, stop: RegExp = /\s+-\s+[A-Z]+\s*:|\s+LIB$/): string | undefined {
   const m = text.match(marker);
@@ -31,6 +31,8 @@ export function parseHellobankDetail(label: string, amount: number): DetailInfo 
       cardLast4: card[5],
     };
   }
+
+  if (isAccountWithdrawal(up)) return accountWithdrawal(up, amount);
 
   if (/^RETRAIT/.test(up)) {
     const m = up.match(/DU\s+(\d{2}\/\d{2}\/\d{2,4})(?:\s+A\s+(.+?))?(?:\s+-\s+CARTE|$)/);
@@ -58,9 +60,9 @@ export function parseHellobankDetail(label: string, amount: number): DetailInfo 
   }
 
   if (/^VIR(EMENT)?\b/.test(up)) {
-    const motif = section(text, /MOTIF\s*:\s*/i, /\s+-\s+REF\s*:|\s+REF\s*:|$/);
+    const motif = section(text, /\/?MOTIF\s*:?\s+/i, /\s+-\s+REF\s*:|\s+\/?REF\b|\s+\/|$/);
     if (amount > 0) {
-      const payer = up.match(/\bDE\s+(.+?)(?:\s+-\s+MOTIF|\s+MOTIF\s*:|\s+-\s+REF|$)/)?.[1] ?? '';
+      const payer = up.match(/(?:\/|\b)DE\s+(.+?)(?:\s+-?\s*\/?MOTIF\b|\s+-?\s*\/?REF\b|\s+\/|$)/)?.[1] ?? '';
       return {
         opType: 'transfer_in',
         counterparty: payer ? titleCase(payer) : 'Transfer received',
@@ -69,7 +71,7 @@ export function parseHellobankDetail(label: string, amount: number): DetailInfo 
         channel: /INSTANTANE/.test(up) ? 'instant' : undefined,
       };
     }
-    const payee = up.match(/\b(?:POUR|VERS|A|AU PROFIT DE)\s+(.+?)(?:\s+-\s+MOTIF|\s+MOTIF\s*:|\s+-\s+REF|$)/)?.[1] ?? '';
+    const payee = up.match(/(?:\/|\b)(?:POUR|VERS|A|AU PROFIT DE)\s+(.+?)(?:\s+-?\s*\/?MOTIF\b|\s+-?\s*\/?REF\b|\s+\/|$)/)?.[1] ?? '';
     return {
       opType: /PERMANENT/.test(up) ? 'standing_order' : /INSTANTANE/.test(up) ? 'instant_transfer_out' : 'transfer_out',
       counterparty: payee ? titleCase(payee) : 'Transfer sent',
@@ -77,6 +79,8 @@ export function parseHellobankDetail(label: string, amount: number): DetailInfo 
       motif,
     };
   }
+
+  if (isInterest(up, amount)) return interestInfo();
 
   if (/^(FRAIS|COMMISSION|COTISATION|AGIOS|INTERETS DEBITEURS)/.test(up)) {
     const name = section(text, /^/, /\s+-\s+|\s+DU\s+\d/) ?? text;

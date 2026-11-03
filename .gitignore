@@ -8,3 +8,6 @@ dist-preview
 *backup*.json
 e2e/shots
 dist-e2e
+# Never commit real statements: only the invented test statements are tracked
+*.pdf
+!test/pdf/*.pdf

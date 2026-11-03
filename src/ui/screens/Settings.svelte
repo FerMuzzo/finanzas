@@ -10,6 +10,7 @@
   import { passphraseStrength } from '../passphrase';
   import Restore from './Restore.svelte';
   import AccountColor from '../AccountColor.svelte';
+  import NewAccountForm from '../NewAccountForm.svelte';
 
   const data = $derived(app.data!);
   let names = $state(app.data!.settings.holderNames.join(', '));
@@ -23,6 +24,7 @@
   let bioPass = $state('');
   let bioForm = $state(false);
   let bioMsg = $state('');
+  let addingAccount = $state(false);
   let rulePattern = $state('');
   let ruleCat = $state('');
   const learned = $derived(Object.keys(data.merchantMemory).length);
@@ -296,6 +298,15 @@
 
   <div class="card">
     <h2>Accounts and imports</h2>
+    {#if addingAccount}
+      <div class="card flat" style="margin: 4px 0 12px">
+        <h3 style="margin-top: 0">New account</h3>
+        <NewAccountForm onsave={() => (addingAccount = false)} oncancel={() => (addingAccount = false)} />
+      </div>
+    {:else}
+      <p class="muted" style="margin-top: -4px">For an account whose bank gives no CSV export, add it here, then import its PDF statements or record in it the transfers you make from your other accounts.</p>
+      <button class="block secondary" style="margin-bottom: 8px" onclick={() => (addingAccount = true)}>Add an account</button>
+    {/if}
     <ul class="list">
       {#each data.accounts as a (a.id)}
         <li style="padding: 12px 0">

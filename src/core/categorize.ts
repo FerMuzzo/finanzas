@@ -114,6 +114,7 @@ export function suggestCategory(t: Transaction, data: VaultData): Suggestion {
   if (mem && fits(mem)) return { categoryId: mem, source: 'memory' };
 
   if (t.opType === 'card_fee' || t.opType === 'bank_fee') return { categoryId: 'bank_fees', source: 'auto' };
+  if (t.opType === 'interest' && !out) return { categoryId: 'interest', source: 'auto' };
   if (t.opType === 'cash_withdrawal') {
     // With a Cash account, a withdrawal only moves money into it; the cash spending is recorded there
     const hasCash = data.accounts.some((a) => a.bank === 'cash');

@@ -6,6 +6,7 @@
   import { DEFAULT_SIMILAR, findSimilarOperations, monthlySeries, similarStats, type SimilarOptions } from '../core/similar';
   import BarChart from './charts/BarChart.svelte';
   import LineChart from './charts/LineChart.svelte';
+  import RecordElsewhere from './RecordElsewhere.svelte';
 
   let { tx, onback }: { tx: Transaction; onback: () => void } = $props();
 
@@ -19,7 +20,14 @@
   const acc = (id: string) => data.accounts.find((a) => a.id === id);
   const color = $derived(tx.amount < 0 ? 'var(--c-spend)' : 'var(--c-income)');
   const pos = (v: number) => formatCents(Math.abs(v));
+  let recording = $state(false);
+  const unlinked = $derived(list.filter((t) => !t.transferId));
+  const sameDirection = $derived(unlinked.filter((t) => Math.sign(t.amount) === Math.sign(tx.amount)));
 </script>
+
+{#if recording}
+  <RecordElsewhere txs={sameDirection} onback={() => (recording = false)} ondone={() => (recording = false)} />
+{:else}
 
 <div class="row" style="margin-bottom: 10px">
   <button class="small ghost" style="padding-left: 0" onclick={onback}>‹ Back to the operation</button>
@@ -84,6 +92,12 @@
       {/each}
     </ul>
   </div>
+
+  {#if sameDirection.length > 1 && data.accounts.length > 1}
+    <button class="block secondary" onclick={() => (recording = true)}>Record these {sameDirection.length} in another of my accounts</button>
+    <p class="hint">For example the monthly transfers to a savings account that has no export.</p>
+  {/if}
+{/if}
 {/if}
 
 <style>

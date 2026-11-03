@@ -39,9 +39,30 @@ function accFilter(accountIds?: string[]) {
   return (t: Transaction) => !f || f.has(t.accountId);
 }
 
+/**
+ * Operations that move money from an everyday account to one of your savings accounts (or back):
+ * internal transfers, but they count as money set aside.
+ */
+export function toSavingsIds(data: VaultData): Set<string> {
+  const acc = new Map(data.accounts.map((a) => [a.id, a]));
+  const byTransfer = new Map<string, Transaction[]>();
+  for (const t of data.transactions) if (t.transferId) byTransfer.set(t.transferId, [...(byTransfer.get(t.transferId) ?? []), t]);
+  const out = new Set<string>();
+  for (const pair of byTransfer.values()) {
+    if (pair.length !== 2) continue;
+    const [a, b] = pair;
+    const sa = acc.get(a.accountId)?.type === 'savings';
+    const sb = acc.get(b.accountId)?.type === 'savings';
+    if (sa && !sb) out.add(b.id);
+    if (sb && !sa) out.add(a.id);
+  }
+  return out;
+}
+
 export function monthlySummaries(data: VaultData, accountIds?: string[]): MonthSummary[] {
   const ok = accFilter(accountIds);
   const cats = catMap(data);
+  const toSavings = toSavingsIds(data);
   const map = new Map<string, MonthSummary>();
   for (const t of data.transactions) {
     if (!ok(t)) continue;
@@ -55,7 +76,7 @@ export function monthlySummaries(data: VaultData, accountIds?: string[]): MonthS
     const k = kindOf(t, cats);
     if (k === 'expense') s.spending += -t.amount;
     else if (k === 'income') s.income += t.amount;
-    else if (k === 'savings') s.savings += -t.amount;
+    else if (k === 'savings' || (k === 'internal' && toSavings.has(t.id))) s.savings += -t.amount;
   }
   for (const s of map.values()) s.net = s.income - s.spending;
   return [...map.values()].sort((a, b) => b.month.localeCompare(a.month));

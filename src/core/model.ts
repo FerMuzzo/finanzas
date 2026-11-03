@@ -12,6 +12,7 @@ export type OpType =
   | 'cheque'
   | 'bank_fee'
   | 'card_refund'
+  | 'interest'
   | 'manual'
   | 'other';
 
@@ -27,6 +28,7 @@ export const OP_LABELS: Record<OpType, string> = {
   cheque: 'Cheque',
   bank_fee: 'Bank fee',
   card_refund: 'Card refund',
+  interest: 'Interest',
   manual: 'Added by hand',
   other: 'Other',
 };
@@ -71,6 +73,7 @@ export interface Transaction {
   notTransfer?: boolean; // you said this is not a transfer between your accounts
   ownTransferHint?: boolean; // counterparty matches one of your names
   mergedFromManual?: boolean; // added by hand first, then confirmed by the bank file
+  mirrorOf?: string; // recorded by hand as the other side of this operation (another of your accounts)
   createdAt: string;
 }
 
@@ -95,6 +98,7 @@ export interface Account {
   interestRate?: number; // yearly percent, for savings accounts
   interestPaid?: 'yearly' | 'monthly';
   interestTax?: number; // percent taken from interest (0 for Livret A, LDDS, LEP)
+  pdfKey?: string; // salted hash of the account number printed on PDF statements, to recognize them
   createdAt: string;
 }
 
@@ -127,6 +131,7 @@ export interface BalanceSnapshot {
   date: string;
   amount: number;
   source: 'import' | 'manual';
+  setAt?: string; // when a balance was set by hand
 }
 
 export type CategoryKind = 'expense' | 'income' | 'transfer' | 'savings';
@@ -143,6 +148,7 @@ export interface Settings {
   autoLockMinutes: number;
   lastBackupAt?: string;
   lastManualAccountId?: string;
+  lastPdfAccountId?: string;
 }
 
 export interface Rule {
@@ -230,6 +236,7 @@ export const DEFAULT_CATEGORIES: Category[] = [
   { id: 'salary', name: 'Salary', kind: 'income' },
   { id: 'freelance', name: 'Freelance income', kind: 'income' },
   { id: 'refunds', name: 'Refunds and reimbursements', kind: 'income' },
+  { id: 'interest', name: 'Interest', kind: 'income' },
   { id: 'other_income', name: 'Other income', kind: 'income' },
   { id: 'savings', name: 'Savings and investments', kind: 'savings' },
   { id: 'own_transfer', name: 'Transfer between my accounts', kind: 'transfer' },

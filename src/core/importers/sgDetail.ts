@@ -64,6 +64,29 @@ function parseCardRest(rest: string): { merchant: string; online: boolean; forei
   return { merchant: squash(r), online, foreign };
 }
 
+/** Interest paid by the bank on a savings account (not overdraft interest). */
+export function isInterest(up: string, amount: number): boolean {
+  return amount > 0 && /^(INTERETS?|INT\.?)\s+(CREDITEURS|ACQUIS|ANNUELS|CAPITALISES|\d{4})|^INTERETS?$|^INTERETS? (DE |DU |SUR )|^REMUNERATION/.test(up);
+}
+
+export function interestInfo(): DetailInfo {
+  return { opType: 'interest', counterparty: 'Interest', merchantKey: 'INTERETS' };
+}
+
+/** "RETRAIT VERS COMPTE COURANT" on a savings statement moves money to another account, it is not cash. */
+export function isAccountWithdrawal(up: string): boolean {
+  return /^RETRAIT\b/.test(up) && !/\bDAB\b|\bGAB\b|GUICHET|ESPECES|CARTE|\bDU \d{2}\/\d{2}/.test(up);
+}
+
+export function accountWithdrawal(up: string, amount: number): DetailInfo {
+  const to = up.match(/\b(?:VERS|SUR|AU PROFIT DE)\s+(.+)$/)?.[1]?.trim();
+  return {
+    opType: amount > 0 ? 'transfer_in' : 'transfer_out',
+    counterparty: to ? 'Withdrawal to ' + titleCase(to) : 'Withdrawal',
+    merchantKey: 'RETRAIT ' + keyOf(to ?? 'COMPTE'),
+  };
+}
+
 export function parseSgDetail(label: string, detail: string, bookingIso: string, amount: number): DetailInfo {
   const text = squash(detail || label);
   const up = text.toUpperCase();
@@ -84,6 +107,8 @@ export function parseSgDetail(label: string, detail: string, bookingIso: string,
     }
     return info;
   }
+
+  if (isAccountWithdrawal(up)) return accountWithdrawal(up, amount);
 
   if (/RETRAIT DAB|^RETRAIT\b/.test(up)) {
     const m = up.match(/CARTE X(\d{4}) .*?(\d{2}\/\d{2})/);
@@ -160,6 +185,8 @@ export function parseSgDetail(label: string, detail: string, bookingIso: string,
   if (/^(REMISE\s+)?CHEQUE|^CHQ/.test(up)) {
     return { opType: 'cheque', counterparty: amount > 0 ? 'Cheque deposit' : 'Cheque', merchantKey: 'CHEQUE' };
   }
+
+  if (isInterest(up, amount)) return interestInfo();
 
   if (/^(FRAIS|COTISATION|COMMISSION|AGIOS|INTERETS DEBITEURS)/.test(up)) {
     const name = cut(text, /\s+\d{6,}/);

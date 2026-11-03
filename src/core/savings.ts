@@ -5,7 +5,8 @@
 
 import { daysBetween, monthOf } from './dates';
 import type { Account, VaultData } from './model';
-import { isInternal, latestBalance } from './summary';
+import { isInternal } from './summary';
+import { currentBalanceOf } from './balances';
 
 export interface SavingsInput {
   start: number; // cents
@@ -54,7 +55,8 @@ export function simulateSavings(s: SavingsInput): { points: SavingsPoint[]; fina
 
 /** Average money moved into an account per month (deposits minus withdrawals) over its recent full months. */
 export function averageMonthlyNetFlow(data: VaultData, accountId: string, months = 6): number {
-  const txs = data.transactions.filter((t) => t.accountId === accountId);
+  // Interest is left out: it is what the account earns, not what you put in
+  const txs = data.transactions.filter((t) => t.accountId === accountId && t.opType !== 'interest');
   if (!txs.length) return 0;
   const byMonth = new Map<string, number>();
   for (const t of txs) byMonth.set(monthOf(t.date), (byMonth.get(monthOf(t.date)) ?? 0) + t.amount);
@@ -65,16 +67,13 @@ export function averageMonthlyNetFlow(data: VaultData, accountId: string, months
 
 /** Current balance: the latest bank balance plus operations dated after it (for example added by hand). */
 export function currentBalance(data: VaultData, account: Account): number | null {
-  const snap = latestBalance(data, account.id);
-  const after = data.transactions.filter((t) => t.accountId === account.id && (!snap || t.date > snap.date));
-  if (!snap && account.bank !== 'cash') return null;
-  return (snap?.amount ?? 0) + after.reduce((s, t) => s + t.amount, 0);
+  return currentBalanceOf(data, account);
 }
 
 /** Interest received last year on this account, when the bank line says so. */
 export function interestSeen(data: VaultData, accountId: string): number {
   return data.transactions
-    .filter((t) => t.accountId === accountId && t.amount > 0 && !isInternal(t) && /INTERET|INTERETS|INT CREDITEURS/i.test(t.detail + ' ' + t.label))
+    .filter((t) => t.accountId === accountId && t.amount > 0 && !isInternal(t) && (t.opType === 'interest' || /INTERET|INTERETS|INT CREDITEURS/i.test(t.detail + ' ' + t.label)))
     .filter((t) => daysBetween(t.date, new Date().toISOString().slice(0, 10)) <= 400)
     .reduce((s, t) => s + t.amount, 0);
 }

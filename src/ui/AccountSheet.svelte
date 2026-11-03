@@ -1,7 +1,9 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import { app, persist } from './app.svelte';
+  import { app, confirmIdentity, persist, toast } from './app.svelte';
   import { formatCents, parseAmount } from '../core/money';
+  import { formatDay, todayIso } from '../core/dates';
+  import { balanceAt, checkpoints, setBalance } from '../core/balances';
   import { BANK_NAMES, type Account } from '../core/model';
   import { averageMonthlyNetFlow, currentBalance, simulateSavings } from '../core/savings';
   import LineChart from './charts/LineChart.svelte';
@@ -30,6 +32,56 @@
   const sim = $derived(simulateSavings({ start, monthly, ratePct: rate, years, interestPaid: account.interestPaid ?? 'yearly', taxPct: account.interestTax ?? 0 }));
   const yearIdx = $derived(sim.points.filter((p) => p.month % 12 === 0));
   const nextYear = $derived(simulateSavings({ start, monthly: 0, ratePct: rate, years: 1, interestPaid: account.interestPaid ?? 'yearly', taxPct: account.interestTax ?? 0 }).final.interest);
+
+  // Correcting the balance: enter it, review the difference, then confirm who you are
+  let fixStep = $state<'' | 'form' | 'review'>('');
+  let fixText = $state('');
+  let fixDate = $state(todayIso());
+  let fixPass = $state('');
+  let fixError = $state('');
+  let fixBusy = $state(false);
+  const snaps = $derived(checkpoints(data, account.id).slice(0, 4));
+  const fixAmount = $derived(parseAmount(fixText));
+  const before = $derived(balanceAt(data, account, fixDate));
+  const later = $derived(data.transactions.filter((t) => t.accountId === account.id && t.date > fixDate).reduce((s, t) => s + t.amount, 0));
+
+  function startFix() {
+    fixStep = 'form';
+    fixText = '';
+    fixDate = todayIso();
+    fixPass = '';
+    fixError = '';
+  }
+  function review(e: SubmitEvent) {
+    e.preventDefault();
+    fixError = '';
+    if (fixAmount === null) {
+      fixError = 'Enter the balance as an amount, for example 3 500,00.';
+      return;
+    }
+    if (!fixDate || fixDate > todayIso()) {
+      fixError = 'Choose a day that is not in the future.';
+      return;
+    }
+    fixStep = 'review';
+  }
+  async function confirmFix(how: 'pass' | 'bio') {
+    if (fixAmount === null) return;
+    fixBusy = true;
+    fixError = '';
+    try {
+      await confirmIdentity(how === 'bio' ? { bio: true } : { passphrase: fixPass });
+      setBalance(data, account, fixDate, fixAmount, how === 'bio' ? 'confirmed with fingerprint' : 'confirmed with passphrase');
+      persist();
+      toast('Balance updated');
+      fixStep = '';
+      fixPass = '';
+    } catch (err) {
+      fixError = (err as Error).message || 'Not confirmed.';
+    } finally {
+      fixBusy = false;
+    }
+  }
 
   function setSavings(e: Event) {
     account.type = (e.target as HTMLInputElement).checked ? 'savings' : account.bank === 'cash' ? 'cash' : 'checking';
@@ -61,7 +113,66 @@
       <div class="num" style="font-size: 1.3rem; font-weight: 700">{balance !== null ? formatCents(balance) : ''}</div>
     </div>
 
-    <div class="card flat" style="margin-top: 12px">
+    <div class="card flat" style="margin-top: 12px" data-testid="balance-card">
+      {#if fixStep === ''}
+        <div class="row">
+          <h3 style="margin: 0">Balance</h3>
+          <span class="num" style="font-weight: 650">{balance !== null ? formatCents(balance) : 'not known yet'}</span>
+        </div>
+        {#if snaps.length}
+          <ul class="list" style="margin-top: 6px">
+            {#each snaps as s (s.date + s.source + (s.setAt ?? ''))}
+              <li class="row" style="padding: 6px 0; font-size: 0.9rem">
+                <span>{formatDay(s.date)} <small class="muted">· {s.source === 'manual' ? 'set by hand' : 'from the bank'}</small></span>
+                <span class="num">{formatCents(s.amount)}</span>
+              </li>
+            {/each}
+          </ul>
+          <p class="hint">The balance counts from the latest of these, plus the operations dated after it.</p>
+        {:else}
+          <p class="hint">No balance known for this account yet. Import a statement, which carries the balance, or set it here.</p>
+        {/if}
+        <button class="block secondary" style="margin-top: 8px" onclick={startFix}>{balance === null ? 'Set the balance' : 'Correct the balance'}</button>
+      {:else if fixStep === 'form'}
+        <h3 style="margin-top: 0">{balance === null ? 'Set the balance' : 'Correct the balance'}</h3>
+        <form onsubmit={review}>
+          <div class="row" style="gap: 10px; align-items: flex-end">
+            <div class="field" style="flex: 1">
+              <label for="fix-amt">Balance (€)</label>
+              <input id="fix-amt" inputmode="decimal" bind:value={fixText} placeholder="as shown by the bank" autocomplete="off" />
+            </div>
+            <div class="field" style="flex: 1">
+              <label for="fix-date">At the end of</label>
+              <input id="fix-date" type="date" bind:value={fixDate} max={todayIso()} />
+            </div>
+          </div>
+          {#if fixError}<div class="notice bad">{fixError}</div>{/if}
+          <div class="row" style="gap: 8px">
+            <button type="button" class="block secondary" onclick={() => (fixStep = '')}>Cancel</button>
+            <button type="submit" class="block">Review</button>
+          </div>
+        </form>
+      {:else}
+        <h3 style="margin-top: 0">Check before saving</h3>
+        <dl class="kv" data-testid="fix-review">
+          <dt>On {formatDay(fixDate)}, the app counts</dt><dd class="num">{before !== null ? formatCents(before) : 'not known'}</dd>
+          <dt>New balance</dt><dd class="num"><strong>{formatCents(fixAmount ?? 0)}</strong></dd>
+          {#if before !== null}<dt>Difference</dt><dd class="num" class:in={(fixAmount ?? 0) - before > 0}>{formatCents((fixAmount ?? 0) - before, 'EUR', { sign: true })}</dd>{/if}
+          <dt>Balance today becomes</dt><dd class="num">{formatCents((fixAmount ?? 0) + later)}</dd>
+        </dl>
+        <p class="hint">Operations are not changed. From now on the balance counts from this amount, plus the operations dated after {formatDay(fixDate)}. The change is written in the history.</p>
+        <div class="field" style="margin: 12px 0 8px">
+          <label for="fix-pass">Your passphrase, to confirm</label>
+          <input id="fix-pass" type="password" bind:value={fixPass} autocomplete="current-password" />
+        </div>
+        {#if fixError}<div class="notice bad">{fixError}</div>{/if}
+        <button class="block" disabled={fixBusy || !fixPass} onclick={() => confirmFix('pass')}>Confirm with passphrase</button>
+        {#if app.bioOn}<button class="block secondary" style="margin-top: 8px" disabled={fixBusy} onclick={() => confirmFix('bio')}>Confirm with fingerprint</button>{/if}
+        <button class="block ghost" style="margin-top: 8px" onclick={() => (fixStep = 'form')}>Back</button>
+      {/if}
+    </div>
+
+    <div class="card flat">
       <label style="display: flex; gap: 10px; align-items: center; font-weight: 600; margin: 0">
         <input type="checkbox" checked={isSavings} onchange={setSavings} style="width: 22px; min-height: 22px" /> This is a savings account
       </label>

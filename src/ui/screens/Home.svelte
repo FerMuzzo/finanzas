@@ -3,12 +3,13 @@
   import { formatDay, formatMonth, todayIso } from '../../core/dates';
   import { formatCents } from '../../core/money';
   import { BANK_NAMES } from '../../core/model';
-  import { latestBalance, monthlySummaries, spendingByCategory } from '../../core/summary';
+  import { monthlySummaries, spendingByCategory } from '../../core/summary';
   import { suggestions, seriesStatuses } from '../../core/recurring';
   import Icon from '../Icon.svelte';
   import MonthBars from '../MonthBars.svelte';
   import AccountSheet from '../AccountSheet.svelte';
   import { currentBalance } from '../../core/savings';
+  import { checkpoints } from '../../core/balances';
   import type { Account } from '../../core/model';
 
   let openAccount = $state<Account | null>(null);
@@ -110,17 +111,17 @@
 
     <div class="card">
       <h2>Accounts</h2>
-      <p class="hint" style="margin-top: -4px">Tap an account to set it as savings and simulate the interest.</p>
+      <p class="hint" style="margin-top: -4px">Tap an account to see or correct its balance, mark it as savings and simulate the interest. Add an account in Settings.</p>
       <ul class="list">
         {#each data.accounts as a (a.id)}
-          {@const bal = latestBalance(data, a.id)}
+          {@const bal = checkpoints(data, a.id)[0]}
           {@const now = currentBalance(data, a)}
           <li>
             <button class="tx" onclick={() => (openAccount = a)}>
               <span class="accbar" style="background: var(--acc-{a.color ?? 1})"></span>
               <div class="main">
                 <div class="name">{a.name}</div>
-                <div class="sub">{a.type === 'savings' ? 'Savings' + (a.interestRate ? ' · ' + String(a.interestRate).replace('.', ',') + '%' : '') : BANK_NAMES[a.bank]}{bal ? ' · bank balance on ' + formatDay(bal.date) : ''}</div>
+                <div class="sub">{a.type === 'savings' ? 'Savings' + (a.interestRate ? ' · ' + String(a.interestRate).replace('.', ',') + '%' : '') : BANK_NAMES[a.bank]}{bal ? (bal.source === 'manual' ? ' · balance set for ' : ' · bank balance on ') + formatDay(bal.date) : ''}</div>
               </div>
               <span class="num amt">{now !== null ? formatCents(now) : 'not known'}</span>
             </button>

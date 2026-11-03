@@ -8,6 +8,8 @@
   import { linkSeries } from '../core/recurring';
   import { deleteManual } from '../core/manual';
   import SimilarView from './SimilarView.svelte';
+  import RecordElsewhere from './RecordElsewhere.svelte';
+  import { canRecordElsewhere } from '../core/accounts';
 
   let { tx, onclose }: { tx: Transaction; onclose: () => void } = $props();
 
@@ -40,6 +42,9 @@
   }
   let confirmDelete = $state(false);
   let similar = $state(false);
+  let recording = $state(false);
+  const canRecord = $derived(canRecordElsewhere(data, tx));
+  const mirrorSource = $derived(tx.mirrorOf ? data.transactions.find((t) => t.id === tx.mirrorOf) : undefined);
   function remove() {
     if (!confirmDelete) {
       confirmDelete = true;
@@ -58,6 +63,8 @@
     <div class="grip"></div>
     {#if similar}
       <SimilarView {tx} onback={() => (similar = false)} />
+    {:else if recording}
+      <RecordElsewhere txs={[tx]} onback={() => (recording = false)} ondone={() => (recording = false)} />
     {:else}
     <div class="row" style="align-items: flex-start">
       <div>
@@ -73,7 +80,10 @@
         <button class="small ghost" onclick={unlink}>Not a transfer between my accounts</button>
       </div>
     {:else if tx.ownTransferHint}
-      <div class="notice warn" style="margin-top: 12px">This looks like a transfer to or from yourself. Choose the category "Transfer between my accounts" to leave it out of totals.</div>
+      <div class="notice warn" style="margin-top: 12px">This looks like a transfer to or from yourself. Record it in the account {tx.amount < 0 ? 'it went to' : 'it came from'} below, or choose the category "Transfer between my accounts" to leave it out of totals.</div>
+    {/if}
+    {#if canRecord}
+      <button class="block secondary" style="margin-top: 12px" onclick={() => (recording = true)}>{tx.amount < 0 ? 'Moved to another of my accounts' : 'Came from another of my accounts'}</button>
     {/if}
     {#if series}
       <div class="notice ok" style="margin-top: 12px">Part of your regular payments: {series.name}.</div>
@@ -101,7 +111,8 @@
 
     <dl class="kv card flat">
       <dt>Account</dt><dd><span class="accdot" style="background: var(--acc-{account?.color ?? 1})"></span>{account?.name}</dd>
-      {#if tx.source === 'manual'}<dt>Source</dt><dd>Added by hand, waiting for the bank file</dd>{:else if tx.mergedFromManual}<dt>Source</dt><dd>Added by hand, confirmed by the bank file</dd>{/if}
+      {#if tx.source === 'manual' && mirrorSource}<dt>Source</dt><dd>Recorded from {mirrorSource.counterparty} ({data.accounts.find((a) => a.id === mirrorSource.accountId)?.name}), waiting for the statement</dd>
+      {:else if tx.source === 'manual'}<dt>Source</dt><dd>Added by hand, waiting for the bank file</dd>{:else if tx.mergedFromManual}<dt>Source</dt><dd>Added by hand, confirmed by the bank file</dd>{/if}
       <dt>Booked on</dt><dd>{formatDay(tx.date)}</dd>
       {#if tx.opDate && tx.opDate !== tx.date}<dt>Paid on</dt><dd>{formatDay(tx.opDate)}</dd>{/if}
       {#if tx.foreign}<dt>Original amount</dt><dd>{fmtForeign(tx.foreign.amount)} {tx.foreign.currency}{tx.foreign.country ? ', ' + tx.foreign.country : ''}</dd>{/if}
