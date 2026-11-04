@@ -24,6 +24,10 @@ import { todayIso } from '../core/dates';
 export type Phase = 'loading' | 'welcome' | 'create' | 'recovery' | 'locked' | 'restore' | 'ready';
 export type Tab = 'home' | 'spending' | 'charts' | 'regular' | 'transactions' | 'import' | 'settings';
 
+function emptyFilter() {
+  return { accountIds: [] as string[], month: '', query: '', categoryId: '', ids: [] as string[], idsLabel: '' };
+}
+
 export const app = $state({
   phase: 'loading' as Phase,
   tab: 'home' as Tab,
@@ -35,8 +39,10 @@ export const app = $state({
   adding: false,
   failedAttempts: 0,
   selectedMonth: '',
-  txFilter: { accountIds: [] as string[], month: '', query: '', categoryId: '' },
+  txFilter: emptyFilter(),
+  selection: null as string[] | null, // operations ticked to change them together, null when not selecting
   spendingAccounts: [] as string[], // accounts shown in the Spending tab, none means all
+  spendingLookThrough: true, // with some accounts picked, count what their money paid for in your other accounts
   bioOn: false, // fingerprint unlock set up on this vault
   bioAvailable: false, // the phone offers a fingerprint or screen lock passkey
   autoBio: false, // offer the fingerprint prompt once when the app starts
@@ -403,7 +409,8 @@ export async function lock(): Promise<void> {
   key = null;
   app.data = null;
   app.selectedMonth = '';
-  app.txFilter = { accountIds: [], month: '', query: '', categoryId: '' };
+  app.txFilter = emptyFilter();
+  app.selection = null;
   app.spendingAccounts = [];
   app.phase = app.demo ? 'welcome' : 'locked';
   app.demo = false;
@@ -514,13 +521,15 @@ export function startAutoLock(): void {
   }, 15_000);
 }
 
-export function showOperations(filter: Partial<typeof app.txFilter>): void {
-  app.txFilter = { accountIds: [], month: '', query: '', categoryId: '', ...filter };
+export function showOperations(filter: Partial<typeof app.txFilter>, opts: { select?: string[] } = {}): void {
+  app.txFilter = { ...emptyFilter(), ...filter };
+  app.selection = opts.select ? [...opts.select] : null;
   app.tab = 'transactions';
   window.scrollTo({ top: 0 });
 }
 
 export function go(tab: Tab): void {
+  if (tab !== 'transactions') app.selection = null;
   app.tab = tab;
   window.scrollTo({ top: 0 });
 }

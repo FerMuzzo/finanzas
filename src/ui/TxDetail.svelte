@@ -62,7 +62,7 @@
   <div class="sheet" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.key === 'Escape' && onclose()} role="dialog" aria-modal="true" aria-label="Operation details" tabindex="-1">
     <div class="grip"></div>
     {#if similar}
-      <SimilarView {tx} onback={() => (similar = false)} />
+      <SimilarView {tx} onback={() => (similar = false)} {onclose} />
     {:else if recording}
       <RecordElsewhere txs={[tx]} onback={() => (recording = false)} ondone={() => (recording = false)} />
     {:else}

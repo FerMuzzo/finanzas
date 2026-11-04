@@ -197,3 +197,25 @@ export function catSourceLabel(s: CatSource | undefined): string {
     default: return '';
   }
 }
+
+/**
+ * You chose one category for several operations at once. Each keeps it as your choice, and each
+ * merchant is remembered, so other operations of the same merchants follow (except those you set
+ * by hand). Returns how many you chose and how many others followed.
+ */
+export function setCategoryForMany(data: VaultData, ids: string[], categoryId: string | null): { set: number; others: number } {
+  const chosen = new Set(ids);
+  const keys = new Set<string>();
+  let set = 0;
+  for (const t of data.transactions) {
+    if (!chosen.has(t.id)) continue;
+    t.categoryId = categoryId;
+    t.catSource = categoryId ? 'user' : undefined;
+    set++;
+    if (categoryId && categoryId !== 'own_transfer' && !NO_MEMORY_KEYS.has(t.merchantKey)) keys.add(t.merchantKey);
+  }
+  for (const k of keys) data.merchantMemory[k] = categoryId!;
+  const others = keys.size ? categorizeAll(data, (x) => keys.has(x.merchantKey) && !chosen.has(x.id)) : 0;
+  if (set) data.audit.push({ at: new Date().toISOString(), action: 'categories set', detail: `${set} operations${others ? `, ${others} more of the same merchants` : ''}` });
+  return { set, others };
+}

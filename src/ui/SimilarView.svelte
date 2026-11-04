@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { app } from './app.svelte';
+  import { app, showOperations } from './app.svelte';
   import { formatDay, formatMonth, formatShortMonth } from '../core/dates';
   import { formatCents } from '../core/money';
   import type { Transaction } from '../core/model';
@@ -8,7 +8,13 @@
   import LineChart from './charts/LineChart.svelte';
   import RecordElsewhere from './RecordElsewhere.svelte';
 
-  let { tx, onback }: { tx: Transaction; onback: () => void } = $props();
+  let { tx, onback, onclose }: { tx: Transaction; onback: () => void; onclose?: () => void } = $props();
+
+  function selectInOperations() {
+    const ids = list.map((t) => t.id);
+    showOperations({ ids, idsLabel: `Similar to ${tx.counterparty}` }, { select: ids });
+    onclose?.();
+  }
 
   const data = $derived(app.data!);
   let opts = $state<SimilarOptions>({ ...DEFAULT_SIMILAR });
@@ -93,6 +99,9 @@
     </ul>
   </div>
 
+  {#if list.length > 1}
+    <button class="block" style="margin-bottom: 8px" onclick={selectInOperations} data-testid="similar-select">Categorize these {list.length} together</button>
+  {/if}
   {#if sameDirection.length > 1 && data.accounts.length > 1}
     <button class="block secondary" onclick={() => (recording = true)}>Record these {sameDirection.length} in another of my accounts</button>
     <p class="hint">For example the monthly transfers to a savings account that has no export.</p>

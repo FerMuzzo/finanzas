@@ -64,7 +64,7 @@
   {:else}
     <Settings />
   {/if}
-  {#if app.tab === 'home' || app.tab === 'transactions'}
+  {#if app.tab === 'home' || (app.tab === 'transactions' && !app.selection)}
     <button class="fab" aria-label="Add an expense or income" onclick={() => (app.adding = true)}>+</button>
   {/if}
   {#if app.adding}<AddSheet onclose={() => (app.adding = false)} />{/if}

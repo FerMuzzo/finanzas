@@ -219,3 +219,82 @@ export function transferFlows(data: VaultData, months: string[], opts: { account
     .sort((a, b) => b.amount - a.amount);
   return { flows, total: flows.reduce((s, f) => s + f.amount, 0) };
 }
+
+export interface FundedAccount {
+  accountId: string;
+  transferred: number; // money sent there from the accounts you are looking at, net of what came back
+  used: number; // the part of it that paid for spending there
+  byCategory: Map<string | null, number>;
+}
+
+/**
+ * What the money sent from some accounts to your other everyday accounts paid for. For each month,
+ * the spending of the receiving account is shared in proportion to where its money came from: if
+ * half of what entered Hello bank came from Société Générale, half of each Hello bank category is
+ * counted for Société Générale, never more than what was sent. Savings accounts are left out: money
+ * sent there is saved, not spent.
+ */
+export function fundedSpending(data: VaultData, months: string[], accountIds: string[], average = false): FundedAccount[] {
+  if (!accountIds.length) return [];
+  const sel = new Set(accountIds);
+  const cats = catMap(data);
+  const accounts = new Map(data.accounts.map((a) => [a.id, a]));
+  const out = new Map<string, FundedAccount>();
+  for (const m of months) {
+    const net = new Map<string, number>();
+    for (const f of transferFlows(data, [m], { accountIds }).flows) {
+      if (f.fromId && sel.has(f.fromId) && f.toId && !sel.has(f.toId)) net.set(f.toId, (net.get(f.toId) ?? 0) + f.amount);
+      if (f.toId && sel.has(f.toId) && f.fromId && !sel.has(f.fromId)) net.set(f.fromId, (net.get(f.fromId) ?? 0) - f.amount);
+    }
+    for (const [bId, sent] of net) {
+      const b = accounts.get(bId);
+      if (!b || b.type === 'savings' || sent <= 0) continue;
+      let inflows = 0;
+      let spent = 0;
+      const byCat = new Map<string | null, number>();
+      for (const t of data.transactions) {
+        if (t.accountId !== bId || monthOf(t.date) !== m) continue;
+        if (t.amount > 0) inflows += t.amount;
+        if (kindOf(t, cats) === 'expense') {
+          spent += -t.amount;
+          byCat.set(t.categoryId, (byCat.get(t.categoryId) ?? 0) - t.amount);
+        }
+      }
+      const e = out.get(bId) ?? { accountId: bId, transferred: 0, used: 0, byCategory: new Map() };
+      e.transferred += sent;
+      if (spent > 0) {
+        const share = Math.min(1, sent / Math.max(inflows, spent));
+        e.used += spent * share;
+        for (const [c, v] of byCat) e.byCategory.set(c, (e.byCategory.get(c) ?? 0) + v * share);
+      }
+      out.set(bId, e);
+    }
+  }
+  const div = average && months.length ? months.length : 1;
+  return [...out.values()]
+    .map((e) => ({
+      ...e,
+      transferred: Math.round(e.transferred / div),
+      used: Math.round(e.used / div),
+      byCategory: new Map([...e.byCategory].map(([c, v]) => [c, Math.round(v / div)] as [string | null, number]).filter(([, v]) => v > 0)),
+    }))
+    .sort((a, b) => b.transferred - a.transferred);
+}
+
+export interface CategoryWithFunded extends CategoryTotal {
+  via: { accountId: string; amount: number }[]; // part paid through your other accounts
+}
+
+/** Spending per category of some accounts, plus what they paid for through your other accounts. */
+export function withFunded(direct: CategoryTotal[], funded: FundedAccount[]): CategoryWithFunded[] {
+  const map = new Map<string | null, CategoryWithFunded>(direct.map((c) => [c.categoryId, { ...c, via: [] }]));
+  for (const f of funded) {
+    for (const [cat, amount] of f.byCategory) {
+      const e = map.get(cat) ?? { categoryId: cat, amount: 0, count: 0, via: [] };
+      e.amount += amount;
+      e.via.push({ accountId: f.accountId, amount });
+      map.set(cat, e);
+    }
+  }
+  return [...map.values()].filter((e) => e.amount > 0).sort((a, b) => b.amount - a.amount);
+}

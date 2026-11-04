@@ -1,5 +1,8 @@
 <script lang="ts">
-  import { app } from '../app.svelte';
+  import { app, persist, toast } from '../app.svelte';
+  import { setCategoryForMany } from '../../core/categorize';
+  import { linkSeries } from '../../core/recurring';
+  import RecordElsewhere from '../RecordElsewhere.svelte';
   import { formatDay, formatMonth, monthOf } from '../../core/dates';
   import { formatCents } from '../../core/money';
   import { OP_LABELS, type Transaction } from '../../core/model';
@@ -14,10 +17,12 @@
   let limit = $state(150);
 
   const months = $derived([...new Set(data.transactions.map((t) => monthOf(t.date)))].sort().reverse());
+  const onlyIds = $derived(app.txFilter.ids.length ? new Set(app.txFilter.ids) : null);
   const filtered = $derived.by(() => {
     const q = normalizeKey(app.txFilter.query);
     return data.transactions.filter(
       (t) =>
+        (!onlyIds || onlyIds.has(t.id)) &&
         (!app.txFilter.accountIds.length || app.txFilter.accountIds.includes(t.accountId)) &&
         (!app.txFilter.month || monthOf(t.date) === app.txFilter.month) &&
         (!app.txFilter.categoryId ||
@@ -63,6 +68,42 @@
     }
     return out;
   });
+  // Selecting several operations to change them together
+  const picked = $derived(new Set(app.selection ?? []));
+  const pickedTxs = $derived(app.selection ? data.transactions.filter((t) => picked.has(t.id)) : []);
+  let bulkCat = $state('');
+  let recording = $state(false);
+  function startSelect() {
+    app.selection = [];
+    bulkCat = '';
+  }
+  function stopSelect() {
+    app.selection = null;
+  }
+  function toggle(t: Transaction) {
+    if (!app.selection) return;
+    app.selection = picked.has(t.id) ? app.selection.filter((id) => id !== t.id) : [...app.selection, t.id];
+  }
+  const allShownPicked = $derived(filtered.length > 0 && filtered.every((t) => picked.has(t.id)));
+  function pickAll() {
+    app.selection = allShownPicked ? [] : filtered.map((t) => t.id);
+  }
+  function applyCategory() {
+    if (!app.selection?.length || !bulkCat) return;
+    const id = bulkCat === '__clear' ? null : bulkCat;
+    const r = setCategoryForMany(data, app.selection, id);
+    linkSeries(data);
+    persist();
+    const name = id ? data.categories.find((c) => c.id === id)?.name : 'Not categorized';
+    toast(`${r.set} set to ${name}${r.others ? `, ${r.others} more of the same merchants followed` : ''}`);
+    app.selection = [];
+    bulkCat = '';
+  }
+  function clearIds() {
+    app.txFilter.ids = [];
+    app.txFilter.idsLabel = '';
+  }
+
   function subLine(t: Transaction): string {
     const other = otherSide.get(t.id);
     const what = other ? `${t.amount < 0 ? 'To' : 'From'} ${accountName(other)}` : catName(t.categoryId) ?? OP_LABELS[t.opType];
@@ -72,11 +113,23 @@
   const accountColor = (id: string) => data.accounts.find((a) => a.id === id)?.color ?? 1;
 </script>
 
-<div class="page">
+<div class="page" class:selecting={!!app.selection}>
   <div class="topbar">
     <h1>Operations</h1>
-    <button class="ghost" onclick={() => (app.tab = 'import')} aria-label="Import a bank file"><Icon name="upload" /></button>
+    <div>
+      {#if app.selection}
+        <button class="small ghost" onclick={stopSelect}>Done</button>
+      {:else}
+        <button class="small ghost" onclick={startSelect} data-testid="select-start">Select</button>
+        <button class="ghost" onclick={() => (app.tab = 'import')} aria-label="Import a bank file"><Icon name="upload" /></button>
+      {/if}
+    </div>
   </div>
+  {#if app.txFilter.ids.length}
+    <div class="chips" style="margin-bottom: 10px">
+      <button class="chip on" onclick={clearIds} aria-label="Show all operations again">{app.txFilter.idsLabel || `${app.txFilter.ids.length} chosen operations`} ✕</button>
+    </div>
+  {/if}
 
   <div class="field" style="position: relative">
     <span style="position: absolute; left: 12px; top: 12px; color: var(--muted)"><Icon name="search" size={20} /></span>
@@ -111,7 +164,8 @@
       <ul class="list">
         {#each g.items as t (t.id)}
           <li>
-            <button class="tx" onclick={() => (selected = t)}>
+            <button class="tx" class:picked={picked.has(t.id)} onclick={() => (app.selection ? toggle(t) : (selected = t))} aria-pressed={app.selection ? picked.has(t.id) : undefined}>
+              {#if app.selection}<span class="tick" class:on={picked.has(t.id)} aria-hidden="true">{#if picked.has(t.id)}<Icon name="check" size={16} />{/if}</span>{/if}
               <span class="accbar" style="background: var(--acc-{accountColor(t.accountId)})" title={accountName(t.accountId)}></span>
               <div class="main">
                 <div class="name">{t.counterparty}</div>
@@ -138,3 +192,54 @@
 {#if selected}
   <TxDetail tx={selected} onclose={() => (selected = null)} />
 {/if}
+
+{#if app.selection}
+  <div class="selbar" data-testid="selbar">
+    <div class="row">
+      <strong>{app.selection.length} selected</strong>
+      <button class="small ghost" onclick={pickAll}>{allShownPicked ? 'Select none' : `Select all ${filtered.length}`}</button>
+    </div>
+    <div class="row" style="gap: 8px; margin-top: 6px">
+      <select bind:value={bulkCat} aria-label="Category for the selected operations" disabled={!app.selection.length}>
+        <option value="">Choose a category</option>
+        <optgroup label="Spending">{#each data.categories.filter((c) => c.kind === 'expense') as c}<option value={c.id}>{c.name}</option>{/each}</optgroup>
+        <optgroup label="Income">{#each data.categories.filter((c) => c.kind === 'income') as c}<option value={c.id}>{c.name}</option>{/each}</optgroup>
+        <optgroup label="Other">{#each data.categories.filter((c) => c.kind === 'savings' || c.kind === 'transfer') as c}<option value={c.id}>{c.name}</option>{/each}<option value="__clear">Not categorized</option></optgroup>
+      </select>
+      <button disabled={!app.selection.length || !bulkCat} onclick={applyCategory}>Apply</button>
+    </div>
+    {#if app.selection.length && data.accounts.length > 1}
+      <button class="small ghost" style="padding-left: 0; margin-top: 4px" onclick={() => (recording = true)}>Record in another of my accounts</button>
+    {/if}
+  </div>
+{/if}
+
+{#if recording}
+  <div class="sheet-backdrop" onclick={() => (recording = false)} role="presentation">
+    <div class="sheet" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.key === 'Escape' && (recording = false)} role="dialog" aria-modal="true" aria-label="Record in another account" tabindex="-1">
+      <div class="grip"></div>
+      <RecordElsewhere
+        txs={pickedTxs}
+        onback={() => (recording = false)}
+        ondone={() => {
+          recording = false;
+          app.selection = [];
+        }}
+      />
+    </div>
+  </div>
+{/if}
+
+<style>
+  .tick { flex: none; width: 24px; height: 24px; border-radius: 7px; border: 2px solid var(--line); display: grid; place-items: center; color: var(--accent-ink); }
+  .tick.on { background: var(--accent); border-color: var(--accent); }
+  .page.selecting .tx { padding-left: 8px; padding-right: 8px; border-radius: 10px; }
+  .tx.picked { background: var(--accent-soft); }
+  .selbar {
+    position: fixed; left: 0; right: 0; z-index: 25; bottom: calc(var(--nav-h) + env(safe-area-inset-bottom));
+    background: var(--surface); border-top: 1px solid var(--line); box-shadow: 0 -4px 14px rgba(0, 0, 0, 0.08);
+    padding: 10px 16px; max-width: 640px; margin: 0 auto;
+  }
+  .selbar select { flex: 1; min-width: 0; }
+  .page.selecting { padding-bottom: calc(var(--nav-h) + 150px + env(safe-area-inset-bottom)); }
+</style>

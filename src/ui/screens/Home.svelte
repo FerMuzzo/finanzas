@@ -93,9 +93,9 @@
           </button>
         {/if}
         {#if toReview > 0}
-          <button class="catrow" onclick={() => showOperations({ categoryId: '__none' })}>
+          <button class="catrow" onclick={() => showOperations({ categoryId: '__none' }, { select: [] })}>
             <div class="top"><span class="name">Categorize {toReview} operation{toReview > 1 ? 's' : ''}</span><span class="badge warn">{toReview}</span></div>
-            <span class="delta">Each choice also teaches the app that merchant</span>
+            <span class="delta">Tick several, choose a category once. Each choice also teaches the app that merchant</span>
           </button>
         {/if}
       </div>

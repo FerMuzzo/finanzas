@@ -2,7 +2,7 @@
   import { app, showOperations } from '../app.svelte';
   import { formatMonth, formatShortMonth, monthOf, todayIso } from '../../core/dates';
   import { formatCents } from '../../core/money';
-  import { completeMonths, fixedVersusVariable, spendingByCategory, topMerchants, transferFlows } from '../../core/summary';
+  import { completeMonths, fixedVersusVariable, fundedSpending, spendingByCategory, topMerchants, transferFlows, withFunded } from '../../core/summary';
   import AccountChips from '../AccountChips.svelte';
 
   const data = $derived(app.data!);
@@ -21,18 +21,44 @@
   const months = $derived(mode === 'month' ? [selMonth] : avgMonths);
   const average = $derived(mode === 'average');
 
-  const cats = $derived(spendingByCategory(data, months, { average, accountIds }));
+  // With some accounts picked: what the money they sent to your other everyday accounts paid for there
+  const funded = $derived(accountIds.length ? fundedSpending(data, months, accountIds, average) : []);
+  const lookThrough = $derived(accountIds.length > 0 && app.spendingLookThrough);
+  const usedFunded = $derived(lookThrough ? funded : []);
+  const viaTotal = $derived(usedFunded.reduce((s, f) => s + f.used, 0));
+  const fundedNames = $derived(funded.map((f) => data.accounts.find((a) => a.id === f.accountId)?.name ?? '').filter(Boolean));
+  const cats = $derived(withFunded(spendingByCategory(data, months, { average, accountIds }), usedFunded));
   const total = $derived(cats.reduce((s, c) => s + c.amount, 0));
   const max = $derived(Math.max(1, ...cats.map((c) => c.amount)));
 
   // Reference for a single month: the average of up to 3 full months before it
   const refMonths = $derived(full.filter((m) => m < selMonth).slice(0, 3));
-  const ref = $derived(mode === 'month' && refMonths.length >= 2 ? new Map(spendingByCategory(data, refMonths, { average: true, accountIds }).map((c) => [c.categoryId, c.amount])) : null);
+  const ref = $derived(
+    mode === 'month' && refMonths.length >= 2
+      ? new Map(
+          withFunded(
+            spendingByCategory(data, refMonths, { average: true, accountIds }),
+            lookThrough ? fundedSpending(data, refMonths, accountIds, true) : [],
+          ).map((c) => [c.categoryId, c.amount]),
+        )
+      : null,
+  );
   const refTotal = $derived(ref ? [...ref.values()].reduce((s, x) => s + x, 0) : 0);
 
-  const fv = $derived(fixedVersusVariable(data, months, average, accountIds));
+  const fvDirect = $derived(fixedVersusVariable(data, months, average, accountIds));
+  const fv = $derived({ fixed: fvDirect.fixed, variable: fvDirect.variable + viaTotal });
   const merchants = $derived(topMerchants(data, months, { limit: 8, average, accountIds }));
   const moved = $derived(transferFlows(data, months, { average, accountIds }));
+  const fundedOf = (id: string | null) => (id ? funded.find((f) => f.accountId === id) : undefined);
+  function usedFor(id: string | null): string {
+    const f = fundedOf(id);
+    if (!f) return '';
+    const top = [...f.byCategory].sort((a, b) => b[1] - a[1]);
+    const parts = top.slice(0, 3).map(([c, v]) => `${catName(c)} ${formatCents(v)}`);
+    if (top.length > 3) parts.push(`other ${formatCents(top.slice(3).reduce((s, [, v]) => s + v, 0))}`);
+    const left = f.transferred - f.used;
+    return (parts.length ? 'Paid for there: ' + parts.join(', ') : 'Nothing spent there yet') + (left > 0 && parts.length ? `; ${formatCents(left)} not spent there` : '') + '.';
+  }
   const accName = (id: string | null, other?: string) => (id ? data.accounts.find((a) => a.id === id)?.name ?? 'an account' : other ? `${other} (not in the app)` : 'outside the app');
   const accColor = (id: string | null) => (id ? data.accounts.find((a) => a.id === id)?.color ?? 1 : 0);
   const hasSeries = $derived(data.recurring.some((r) => r.status === 'confirmed'));
@@ -67,6 +93,12 @@
 <div class="page">
   <div class="topbar"><h1>Spending</h1></div>
   <AccountChips bind:selected={app.spendingAccounts} label="Accounts in this view" />
+  {#if accountIds.length && funded.length}
+    <label class="look" data-testid="look-through">
+      <input type="checkbox" bind:checked={app.spendingLookThrough} />
+      <span>Count what the money sent to {fundedNames.join(' and ')} paid for there</span>
+    </label>
+  {/if}
 
   {#if allMonths.length === 0}
     <div class="card"><p class="muted" style="margin: 0">{accountIds.length ? 'No operations in the chosen accounts.' : 'Import a bank file to see where your money goes.'}</p></div>
@@ -100,6 +132,9 @@
         {@const d = Math.round(((total - refTotal) / refTotal) * 100)}
         <div class="delta" class:up={d >= 10} class:down={d <= -10}>{d >= 0 ? '▲' : '▼'} {Math.abs(d)}% compared with your average of {formatCents(refTotal)}</div>
       {/if}
+      {#if viaTotal > 0}
+        <p class="hint" style="margin: 6px 0 0">Including {formatCents(viaTotal)} paid through {usedFunded.map((f) => data.accounts.find((a) => a.id === f.accountId)?.name).join(' and ')} with the money you sent there.</p>
+      {/if}
       {#if mode === 'average' && avgMonths.length < span}
         <p class="hint" style="margin: 6px 0 0">Only {avgMonths.length} complete month{avgMonths.length > 1 ? 's' : ''} of data so far.</p>
       {/if}
@@ -121,6 +156,9 @@
                 <span class="delta {dl?.cls ?? ''}">{dl ? dl.text : average ? perMonth(c.count) : `${c.count} payment${c.count === 1 ? '' : 's'}`}</span>
                 <span class="delta">{pct(c.amount, total)}%</span>
               </div>
+              {#if c.via.length}
+                <div class="delta" style="margin-top: 2px">{c.via.map((v) => `${formatCents(v.amount)} through ${accName(v.accountId)}`).join(', ')}</div>
+              {/if}
               <div class="track"><div class="fill" style="width: {(c.amount / max) * 100}%"></div></div>
             </button>
             {#if open === c.categoryId}
@@ -129,6 +167,9 @@
                   <div class="row"><span>{m.name}</span><span class="num">{formatCents(m.amount)}</span></div>
                 {/each}
                 <button class="small ghost" style="padding-left: 0" onclick={() => seeOps(c.categoryId)}>{c.categoryId ? 'See these operations' : 'Categorize these operations'}</button>
+                {#each c.via as v (v.accountId)}
+                  <button class="small ghost" style="padding-left: 0; display: block" onclick={() => showOperations({ categoryId: c.categoryId ?? '__none', month: mode === 'month' ? selMonth : '', accountIds: [v.accountId] })}>See them in {accName(v.accountId)}</button>
+                {/each}
               </div>
             {/if}
           </li>
@@ -171,6 +212,9 @@
                   <span class="num" style="font-weight: 650">{formatCents(f.amount)}</span>
                 </div>
                 <span class="delta">{average ? perMonth(f.count).replace('payment', 'transfer') : `${f.count} transfer${f.count === 1 ? '' : 's'}`}</span>
+                {#if f.fromId && accountIds.includes(f.fromId) && fundedOf(f.toId)}
+                  <span class="delta used">{usedFor(f.toId)}</span>
+                {/if}
               </button>
             </li>
           {/each}
@@ -191,3 +235,9 @@
     </div>
   {/if}
 </div>
+
+<style>
+  .look { display: flex; gap: 10px; align-items: flex-start; font-weight: 500; font-size: 0.92rem; margin: -2px 0 12px; }
+  .look input { width: 22px; min-height: 22px; flex: none; margin: 0; }
+  .used { display: block; margin-top: 2px; }
+</style>
