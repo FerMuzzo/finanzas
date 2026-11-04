@@ -3,6 +3,8 @@
   import { setCategoryForMany } from '../../core/categorize';
   import { linkSeries } from '../../core/recurring';
   import RecordElsewhere from '../RecordElsewhere.svelte';
+  import CategorySelect from '../CategorySelect.svelte';
+  import SimilarPicker from '../SimilarPicker.svelte';
   import { formatDay, formatMonth, monthOf } from '../../core/dates';
   import { formatCents } from '../../core/money';
   import { OP_LABELS, type Transaction } from '../../core/model';
@@ -71,7 +73,7 @@
   // Selecting several operations to change them together
   const picked = $derived(new Set(app.selection ?? []));
   const pickedTxs = $derived(app.selection ? data.transactions.filter((t) => picked.has(t.id)) : []);
-  let bulkCat = $state('');
+  let bulkCat = $state<string | null>(''); // '' nothing chosen yet, null for "Not categorized"
   let recording = $state(false);
   function startSelect() {
     app.selection = [];
@@ -80,17 +82,26 @@
   function stopSelect() {
     app.selection = null;
   }
+  let lastPicked = $state<string | null>(null); // the operation just ticked offers its similar ones
+  let similarFor = $state<Transaction | null>(null);
   function toggle(t: Transaction) {
     if (!app.selection) return;
-    app.selection = picked.has(t.id) ? app.selection.filter((id) => id !== t.id) : [...app.selection, t.id];
+    if (picked.has(t.id)) {
+      app.selection = app.selection.filter((id) => id !== t.id);
+      if (lastPicked === t.id) lastPicked = null;
+    } else {
+      app.selection = [...app.selection, t.id];
+      lastPicked = t.id;
+    }
   }
+  const hiddenPicked = $derived(app.selection ? app.selection.length - filtered.filter((t) => picked.has(t.id)).length : 0);
   const allShownPicked = $derived(filtered.length > 0 && filtered.every((t) => picked.has(t.id)));
   function pickAll() {
     app.selection = allShownPicked ? [] : filtered.map((t) => t.id);
   }
   function applyCategory() {
-    if (!app.selection?.length || !bulkCat) return;
-    const id = bulkCat === '__clear' ? null : bulkCat;
+    if (!app.selection?.length || bulkCat === '') return;
+    const id = bulkCat;
     const r = setCategoryForMany(data, app.selection, id);
     linkSeries(data);
     persist();
@@ -178,6 +189,11 @@
                 {#if t.transferId}<span class="badge accent">own transfer</span>{:else if t.ownTransferHint}<span class="badge warn">to yourself?</span>{:else if t.source === 'manual'}<span class="badge">added by hand</span>{/if}
               </div>
             </button>
+            {#if app.selection && lastPicked === t.id && picked.has(t.id)}
+              <button class="small ghost similar-link" onclick={() => (similarFor = t)} data-testid="pick-similar">
+                <Icon name="search" size={16} /> Find similar operations
+              </button>
+            {/if}
           </li>
         {/each}
       </ul>
@@ -196,22 +212,21 @@
 {#if app.selection}
   <div class="selbar" data-testid="selbar">
     <div class="row">
-      <strong>{app.selection.length} selected</strong>
+      <span><strong>{app.selection.length} selected</strong>{#if hiddenPicked > 0}<small class="muted"> · {hiddenPicked} not in this list</small>{/if}</span>
       <button class="small ghost" onclick={pickAll}>{allShownPicked ? 'Select none' : `Select all ${filtered.length}`}</button>
     </div>
     <div class="row" style="gap: 8px; margin-top: 6px">
-      <select bind:value={bulkCat} aria-label="Category for the selected operations" disabled={!app.selection.length}>
-        <option value="">Choose a category</option>
-        <optgroup label="Spending">{#each data.categories.filter((c) => c.kind === 'expense') as c}<option value={c.id}>{c.name}</option>{/each}</optgroup>
-        <optgroup label="Income">{#each data.categories.filter((c) => c.kind === 'income') as c}<option value={c.id}>{c.name}</option>{/each}</optgroup>
-        <optgroup label="Other">{#each data.categories.filter((c) => c.kind === 'savings' || c.kind === 'transfer') as c}<option value={c.id}>{c.name}</option>{/each}<option value="__clear">Not categorized</option></optgroup>
-      </select>
-      <button disabled={!app.selection.length || !bulkCat} onclick={applyCategory}>Apply</button>
+      <div style="flex: 1; min-width: 0"><CategorySelect bind:value={bulkCat} placeholder="Choose a category" label="Category for the selected operations" disabled={!app.selection.length} /></div>
+      <button disabled={!app.selection.length || bulkCat === ''} onclick={applyCategory}>Apply</button>
     </div>
     {#if app.selection.length && data.accounts.length > 1}
       <button class="small ghost" style="padding-left: 0; margin-top: 4px" onclick={() => (recording = true)}>Record in another of my accounts</button>
     {/if}
   </div>
+{/if}
+
+{#if similarFor}
+  <SimilarPicker tx={similarFor} onclose={() => (similarFor = null)} />
 {/if}
 
 {#if recording}
@@ -235,11 +250,11 @@
   .tick.on { background: var(--accent); border-color: var(--accent); }
   .page.selecting .tx { padding-left: 8px; padding-right: 8px; border-radius: 10px; }
   .tx.picked { background: var(--accent-soft); }
+  .similar-link { display: flex; align-items: center; gap: 6px; margin: -4px 0 8px 40px; padding: 4px 8px; min-height: 34px; }
   .selbar {
     position: fixed; left: 0; right: 0; z-index: 25; bottom: calc(var(--nav-h) + env(safe-area-inset-bottom));
     background: var(--surface); border-top: 1px solid var(--line); box-shadow: 0 -4px 14px rgba(0, 0, 0, 0.08);
     padding: 10px 16px; max-width: 640px; margin: 0 auto;
   }
-  .selbar select { flex: 1; min-width: 0; }
   .page.selecting { padding-bottom: calc(var(--nav-h) + 150px + env(safe-area-inset-bottom)); }
 </style>

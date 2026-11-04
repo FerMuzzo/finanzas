@@ -8,6 +8,7 @@
   import { linkSeries } from '../core/recurring';
   import { deleteManual } from '../core/manual';
   import SimilarView from './SimilarView.svelte';
+  import CategorySelect from './CategorySelect.svelte';
   import RecordElsewhere from './RecordElsewhere.svelte';
   import { canRecordElsewhere } from '../core/accounts';
 
@@ -18,13 +19,9 @@
   const other = $derived(tx.transferId ? data.transactions.find((t) => t.transferId === tx.transferId && t.id !== tx.id) : undefined);
   const otherAccount = $derived(other ? data.accounts.find((a) => a.id === other.accountId) : undefined);
   const series = $derived(tx.recurringId ? data.recurring.find((r) => r.id === tx.recurringId) : undefined);
-  const expenseCats = $derived(data.categories.filter((c) => c.kind === 'expense'));
-  const incomeCats = $derived(data.categories.filter((c) => c.kind === 'income'));
-  const otherCats = $derived(data.categories.filter((c) => c.kind === 'savings' || c.kind === 'transfer'));
   const sameMerchant = $derived(data.transactions.filter((t) => t.merchantKey === tx.merchantKey && t.id !== tx.id).length);
 
-  function setCategory(e: Event) {
-    const v = (e.target as HTMLSelectElement).value || null;
+  function setCategory(v: string | null) {
     const n = setCategoryByHand(data, tx, v);
     linkSeries(data);
     persist();
@@ -92,12 +89,7 @@
     <div class="card flat" style="margin-top: 12px">
       <div class="field">
         <label for="cat">Category</label>
-        <select id="cat" value={tx.categoryId ?? ''} onchange={setCategory}>
-          <option value="">Not categorized</option>
-          <optgroup label="Spending">{#each expenseCats as c}<option value={c.id}>{c.name}</option>{/each}</optgroup>
-          <optgroup label="Income">{#each incomeCats as c}<option value={c.id}>{c.name}</option>{/each}</optgroup>
-          <optgroup label="Other">{#each otherCats as c}<option value={c.id}>{c.name}</option>{/each}</optgroup>
-        </select>
+        <CategorySelect id="cat" value={tx.categoryId} onpick={setCategory} />
         <div class="hint">
           {#if tx.categoryId}{catSourceLabel(tx.catSource)}.{/if}
           {#if sameMerchant > 0}Your choice also applies to the {sameMerchant} other operation{sameMerchant > 1 ? 's' : ''} from this merchant, except those you set by hand.{/if}

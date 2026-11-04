@@ -1,4 +1,5 @@
 <script lang="ts">
+  import CategorySelect from './CategorySelect.svelte';
   import { app, persist, toast } from './app.svelte';
   import { formatDay, todayIso } from '../core/dates';
   import { formatCents, parseAmount } from '../core/money';
@@ -33,7 +34,6 @@
     return v === null ? null : Math.abs(v);
   });
   const signed = $derived(cents === null ? null : kind === 'expense' ? -cents : cents);
-  const cats = $derived(data.categories.filter((c) => (kind === 'expense' ? c.kind === 'expense' || c.kind === 'savings' : c.kind === 'income')));
   const known = $derived([...new Set(data.transactions.filter((t) => t.amount < 0 === (kind === 'expense')).map((t) => t.counterparty))].slice(0, 200));
 
   // Suggest a category from the description, until you pick one yourself
@@ -103,10 +103,15 @@
       </div>
       <div class="field">
         <label for="cat2">Category</label>
-        <select id="cat2" bind:value={categoryId} onchange={() => (categoryTouched = true)}>
-          <option value="">Not categorized</option>
-          {#each cats as c}<option value={c.id}>{c.name}</option>{/each}
-        </select>
+        <CategorySelect
+          id="cat2"
+          value={categoryId || null}
+          kinds={kind === 'expense' ? ['expense', 'savings'] : ['income']}
+          onpick={(v) => {
+            categoryId = v ?? '';
+            categoryTouched = true;
+          }}
+        />
       </div>
       <div class="row" style="gap: 10px">
         <div class="field" style="flex: 1">

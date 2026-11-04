@@ -95,6 +95,13 @@ function kindOf(categories: Category[], id: string): Category['kind'] | undefine
 
 /** Category suggested for one operation, ignoring any category it already has. */
 export function suggestCategory(t: Transaction, data: VaultData): Suggestion {
+  const s = suggestRaw(t, data);
+  // a category you deleted is never suggested
+  if (s.categoryId && !data.categories.some((c) => c.id === s.categoryId)) return { categoryId: null, source: null };
+  return s;
+}
+
+function suggestRaw(t: Transaction, data: VaultData): Suggestion {
   const h = hay(t);
   const out = t.amount < 0;
   const fits = (id: string) => {

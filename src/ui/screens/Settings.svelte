@@ -12,6 +12,7 @@
   import AccountColor from '../AccountColor.svelte';
   import NewAccountForm from '../NewAccountForm.svelte';
   import AccountSheet from '../AccountSheet.svelte';
+  import CategoriesManager from '../CategoriesManager.svelte';
   import type { Account } from '../../core/model';
 
   const data = $derived(app.data!);
@@ -204,6 +205,12 @@
     <p class="muted">Used to flag transfers to yourself, for example between your Société Générale and Hello bank accounts. Separate names with commas. To have transfers recorded in a given account automatically, set its own transfer names under Accounts below.</p>
     <div class="field"><input bind:value={names} placeholder="First name Last name" /></div>
     <button class="secondary" onclick={saveNames}>Save names</button>
+  </div>
+
+  <div class="card" data-testid="categories-card">
+    <h2>Categories</h2>
+    <p class="muted">Add your own, rename them, or delete one and move its operations to another. Tap a category to change it; the number is how many operations it has.</p>
+    <CategoriesManager />
   </div>
 
   <div class="card">

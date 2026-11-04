@@ -151,6 +151,7 @@ export interface Settings {
   lastBackupAt?: string;
   lastManualAccountId?: string;
   lastPdfAccountId?: string;
+  removedCategories?: string[]; // default categories you deleted, so they are not added back
 }
 
 export interface Rule {
@@ -269,7 +270,9 @@ export function migrateVault(v: VaultData): VaultData {
   v.merchantMemory ??= {};
   v.recurring ??= [];
   for (const a of v.accounts) if (!a.color) a.color = nextAccountColor(v.accounts);
+  const removed = new Set(v.settings.removedCategories ?? []);
   for (const def of DEFAULT_CATEGORIES) {
+    if (removed.has(def.id)) continue;
     const existing = v.categories.find((c) => c.id === def.id);
     if (!existing) v.categories.push({ ...def });
     else if (def.id === 'eating_out' && existing.name === 'Eating out') existing.name = def.name;
