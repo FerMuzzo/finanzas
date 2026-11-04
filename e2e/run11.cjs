@@ -89,16 +89,26 @@ fs.writeFileSync(SG, Buffer.from([
   await card.getByTestId('category-edit').locator('input').press('Tab');
   r.renamed = await card.getByRole('button', { name: /^Eating out/ }).count();
   await card.getByRole('button', { name: /^Snacks/ }).click();
-  await card.getByRole('button', { name: 'Delete this category' }).click();
-  r.deleteText = await card.getByTestId('category-edit').innerText();
-  await card.getByLabel('Move them to').selectOption('groceries');
-  await shot('113_delete_category', false);
-  await card.getByRole('button', { name: 'Delete Snacks' }).click();
+  await card.getByRole('button', { name: 'Merge into another' }).click();
+  const merge = card.getByTestId('merge-panel');
+  r.mergeOptions = await merge.getByLabel('Merge into').locator('option').allInnerTexts();
+  await merge.getByLabel('Merge into').selectOption('groceries');
+  r.mergeText = await merge.innerText();
+  await shot('114_merge_category');
+  await merge.getByRole('button', { name: 'Merge into Groceries' }).click();
   r.toast2 = await page.locator('.toast').innerText();
   r.snacksGone = (await card.getByRole('button', { name: /^Snacks/ }).count()) === 0;
+  r.groceriesCount = await card.getByRole('button', { name: /^Groceries/ }).innerText();
+  // delete: operations become not categorized
+  await card.getByRole('button', { name: /^Pets/ }).click();
+  await card.getByRole('button', { name: 'Delete', exact: true }).click();
+  r.deleteText = await card.getByTestId('delete-panel').innerText();
+  await card.getByRole('button', { name: 'Delete Pets' }).click();
+  r.petsGone = (await card.getByRole('button', { name: /^Pets/ }).count()) === 0;
 
   // 4. The operations followed, and the operation sheet offers a new category too
   await nav('Operations');
+  await page.getByLabel('Category').selectOption('');
   r.subs = await page.locator('.tx .sub').allInnerTexts();
   await page.locator('.tx').filter({ hasText: 'Kiosque' }).first().click();
   r.detailOptions = (await page.locator('#cat option').allInnerTexts()).slice(-2);

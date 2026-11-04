@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { emptyVault, migrateVault, type VaultData } from '../src/core/model';
 import { addAccount } from '../src/core/accounts';
 import { addManual } from '../src/core/manual';
-import { addCategory, categoryUse, deleteCategory, renameCategory } from '../src/core/categories';
+import { addCategory, categoryUse, deleteCategory, mergeCategories, mergeTargets, renameCategory } from '../src/core/categories';
 import { categorizeAll, setCategoryForMany } from '../src/core/categorize';
 import { spendingByCategory } from '../src/core/summary';
 
@@ -61,5 +61,36 @@ describe('categories', () => {
     categorizeAll(v);
     expect(v.transactions.find((x) => x.id === fee.id)!.categoryId).toBeNull();
     expect(() => deleteCategory(v, 'own_transfer', null)).toThrow(/transfers/);
+  });
+});
+
+describe('merging categories', () => {
+  it('moves everything into the other category, which keeps its name', () => {
+    const v = vault();
+    const a = addAccount(v, { name: 'Current', bank: 'other', type: 'checking' });
+    const snacks = addCategory(v, 'Snacks', 'expense');
+    const t1 = addManual(v, { accountId: a.id, date: '2026-10-02', amount: -350, description: 'Kiosque test', categoryId: snacks.id });
+    const t2 = addManual(v, { accountId: a.id, date: '2026-10-05', amount: -1200, description: 'Primeur test', categoryId: 'groceries' });
+    v.rules.push({ id: 'r1', pattern: 'kiosque', categoryId: snacks.id, createdAt: '' });
+    expect(mergeTargets(v, snacks.id).every((c) => c.kind === 'expense')).toBe(true);
+    expect(mergeTargets(v, snacks.id).some((c) => c.id === 'salary')).toBe(false);
+    expect(mergeCategories(v, snacks.id, 'groceries')).toBe(1);
+    expect(v.transactions.find((x) => x.id === t1.id)!.categoryId).toBe('groceries');
+    expect(v.transactions.find((x) => x.id === t2.id)!.categoryId).toBe('groceries');
+    expect(v.rules[0].categoryId).toBe('groceries');
+    expect(v.categories.some((c) => c.id === snacks.id)).toBe(false);
+    expect(v.categories.find((c) => c.id === 'groceries')!.name).toBe('Groceries');
+    expect(spendingByCategory(v, ['2026-10'])).toEqual([{ categoryId: 'groceries', amount: 1550, count: 2 }]);
+    // a later operation of the merged category's merchant goes to the merged one
+    const t3 = addManual(v, { accountId: a.id, date: '2026-10-09', amount: -400, description: 'Kiosque test', categoryId: null });
+    expect(v.transactions.find((x) => x.id === t3.id)!.categoryId).toBe('groceries');
+    expect(v.audit.some((e) => e.action === 'categories merged')).toBe(true);
+  });
+
+  it('refuses a merge across kinds or into itself', () => {
+    const v = vault();
+    expect(() => mergeCategories(v, 'groceries', 'salary')).toThrow(/same kind/);
+    expect(() => mergeCategories(v, 'groceries', 'groceries')).toThrow(/another category/);
+    expect(() => mergeCategories(v, 'own_transfer', 'savings')).toThrow();
   });
 });

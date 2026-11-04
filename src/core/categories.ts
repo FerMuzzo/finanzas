@@ -82,6 +82,23 @@ export function deleteCategory(data: VaultData, id: string, moveTo: string | nul
   // A default category you delete does not come back with the next update of the app
   if (DEFAULT_CATEGORIES.some((d) => d.id === id)) data.settings.removedCategories = [...new Set([...(data.settings.removedCategories ?? []), id])];
   const target = moveTo ? data.categories.find((x) => x.id === moveTo)?.name : 'not categorized';
-  data.audit.push({ at: new Date().toISOString(), action: 'category deleted', detail: `${c.name}: ${moved} operations moved to ${target}` });
+  data.audit.push({ at: new Date().toISOString(), action: moveTo ? 'categories merged' : 'category deleted', detail: `${c.name}: ${moved} operations moved to ${target}` });
   return moved;
+}
+
+/** Categories you can merge a category into: the others of the same kind (spending into spending, and so on). */
+export function mergeTargets(data: VaultData, id: string): Category[] {
+  const c = data.categories.find((x) => x.id === id);
+  return c ? data.categories.filter((x) => x.id !== id && x.kind === c.kind) : [];
+}
+
+/**
+ * Merge a category into another: its operations, rules, regular payments and learned merchants
+ * move to the other one, which keeps its name, and the merged category disappears.
+ */
+export function mergeCategories(data: VaultData, fromId: string, intoId: string): number {
+  const into = data.categories.find((x) => x.id === intoId);
+  if (!into || fromId === intoId) throw new Error('Choose another category to merge into.');
+  if (!mergeTargets(data, fromId).some((x) => x.id === intoId)) throw new Error('Only categories of the same kind can be merged.');
+  return deleteCategory(data, fromId, intoId);
 }

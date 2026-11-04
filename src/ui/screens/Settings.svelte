@@ -209,7 +209,7 @@
 
   <div class="card" data-testid="categories-card">
     <h2>Categories</h2>
-    <p class="muted">Add your own, rename them, or delete one and move its operations to another. Tap a category to change it; the number is how many operations it has.</p>
+    <p class="muted">Add your own, or tap a category to rename it, merge it into another one or delete it. The number is how many operations it has.</p>
     <CategoriesManager />
   </div>
 
